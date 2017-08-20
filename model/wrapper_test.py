@@ -33,6 +33,14 @@ class TestWrapper(unittest.TestCase):
     prediction = wrapper.predict([params, x])
     np.testing.assert_allclose(expected_result, prediction)
 
+  def testGetAllWeights(self):
+    model = self.build_model()
+    model.set_weights((np.eye(2), np.zeros(2)))
+    wrapper = ModelWrapper(model)
+
+    expected_weights = np.array([1., 0., 0., 1., 0., 0.])
+    np.testing.assert_allclose(expected_weights, wrapper.get_all_weights())
+
   def build_wrapped_model(self, model):
     wrapper = ModelWrapper(model)
 
@@ -47,4 +55,5 @@ class TestWrapper(unittest.TestCase):
     model.add(Dense(2, input_shape=(2,)))
     model.add(Activation('relu'))
     model.compile(loss='mse', optimizer='SGD')
+
     return model

@@ -1,6 +1,7 @@
 from keras import backend as K
 from keras.engine.topology import Layer
 from keras.layers import Activation, Dense
+import numpy as np
 
 
 class ModelWrapper(Layer):
@@ -18,11 +19,11 @@ class ModelWrapper(Layer):
     params, x = inputs
 
     last_weight = 0
-    last_size = x.shape[-1]
+    last_size = K.int_shape(x)[-1]
     for layer in self.model.layers:
       if isinstance(layer, Dense):
         weights = params[:, last_weight:last_weight + last_size * layer.units]
-        weights = K.reshape(weights, (params.shape[0], last_size, layer.units))
+        weights = K.reshape(weights, (-1, last_size, layer.units))
         x = K.batch_dot(weights, x, axes=1)
         last_weight += last_size * layer.units
         last_size = layer.units
@@ -40,3 +41,10 @@ class ModelWrapper(Layer):
 
   def compute_output_shape(self, input_shape):
     return self.model.output_shape
+
+  def get_all_weights(self):
+    weights = []
+    for w in self.model.get_weights():
+      weights.extend(w.flatten())
+
+    return np.array(weights)
