@@ -69,7 +69,7 @@ def prepare_inputs(inputs_list):
 def prepare_tensors(step_function, inputs_list, initial_states, constants):
   time = tf.constant(0, dtype='int32', name='time')
   time_steps = tf.shape(inputs_list[0])[0]
-  outputs_list, _ = step_function([x[0] for x in inputs_list], initial_states + constants)
+  outputs_list, _ = step_function([x[0] for x in inputs_list], tuple(initial_states) + tuple(constants))
 
   outputs_ta = []
   for i, outputs in enumerate(outputs_list):
