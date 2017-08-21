@@ -24,12 +24,13 @@ class ModelWrapper(Layer):
       if isinstance(layer, Dense):
         weights = params[:, last_weight:last_weight + last_size * layer.units]
         weights = K.reshape(weights, (-1, last_size, layer.units))
-        x = K.batch_dot(weights, x, axes=1)
+        x = K.batch_dot(weights, x, axes=[2, 2])
+        x = K.permute_dimensions(x, [0, 2, 1])
         last_weight += last_size * layer.units
         last_size = layer.units
 
         if layer.use_bias:
-          weights = params[:, last_weight:last_weight + last_size]
+          weights = K.expand_dims(params[:, last_weight:last_weight + last_size], 1)
           x = x + weights
           last_weight += last_size
 
