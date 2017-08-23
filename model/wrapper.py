@@ -24,8 +24,7 @@ class ModelWrapper(Layer):
       if isinstance(layer, Dense):
         weights = params[:, last_weight:last_weight + last_size * layer.units]
         weights = K.reshape(weights, (-1, last_size, layer.units))
-        x = K.batch_dot(weights, x, axes=[2, 2])
-        x = K.permute_dimensions(x, [0, 2, 1])
+        x = K.batch_dot(x, weights, axes=[2, 2])
         last_weight += last_size * layer.units
         last_size = layer.units
 
@@ -41,7 +40,7 @@ class ModelWrapper(Layer):
     return x
 
   def compute_output_shape(self, input_shape):
-    return self.model.output_shape
+    return input_shape[1][:-1] + (self.model.output_shape[-1],)
 
   def get_all_weights(self):
     weights = []
