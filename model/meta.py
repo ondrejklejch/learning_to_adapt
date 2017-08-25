@@ -113,7 +113,7 @@ class MetaLearner(Layer):
     m2 = K.cast(K.less_equal(K.abs(x), negExpP), K.floatx())
 
     return (
-        m1 * K.log(K.abs(x)) / P - m2,
+        m1 * K.log(K.abs(x) + m2) / P - m2,
         m1 * K.sign(x) + m2 * expP * x
     )
 

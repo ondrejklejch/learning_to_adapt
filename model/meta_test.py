@@ -30,7 +30,7 @@ class TestLoop(unittest.TestCase):
 
   def generator(self):
     while True:
-      params = np.array([[0.5, 0.0]])
+      params = np.array([[1.0, 0.0]])
       training_feats = np.array([[[[1.], [0.]]] * 5])
       training_labels = np.array([[[[1.], [0.]]] * 5])
       testing_feats = np.array([[[1.], [0.]]])
