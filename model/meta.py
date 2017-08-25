@@ -9,19 +9,18 @@ from loop import rnn
 from wrapper import ModelWrapper
 
 
-def create_meta_learner(model):
+def create_meta_learner(model, units=20):
   wrapper = ModelWrapper(model)
-  params = wrapper.get_all_weights()
   feat_dim = wrapper.model.layers[0].input_shape[-1]
   num_labels = wrapper.model.layers[-1].output_shape[-1]
-  num_params = len(params)
+  num_params = len(wrapper.get_all_weights())
 
   training_feats = Input(shape=(None, None, feat_dim,))
   training_labels = Input(shape=(None, None, num_labels,))
   testing_feats = Input(shape=(None, feat_dim,))
   params = Input(shape=(num_params,))
 
-  meta_learner = MetaLearner(wrapper)
+  meta_learner = MetaLearner(wrapper, LSTM(units, implementation=2))
   new_params = meta_learner([training_feats, training_labels, params])
   predictions = wrapper([new_params, testing_feats])
 
@@ -33,15 +32,18 @@ def create_meta_learner(model):
 
 class MetaLearner(Layer):
 
-  def __init__(self, wrapper, **kwargs):
+  def __init__(self, wrapper, hidden_layer, **kwargs):
     super(MetaLearner, self).__init__(**kwargs)
 
     self.wrapper = wrapper
+    self.hidden_layer = hidden_layer
     self.input_spec = [InputSpec(ndim=4), InputSpec(ndim=4), InputSpec(ndim=2)]
 
   def build(self, input_shapes):
+    self.hidden_layer.build((None, None, 5))
+
     self.W_f = self.add_weight(
-        shape=(6, 1),
+        shape=(self.hidden_layer.units + 1, 1),
         name='W_f',
         initializer='glorot_uniform',
     )
@@ -53,7 +55,7 @@ class MetaLearner(Layer):
     )
 
     self.W_i = self.add_weight(
-        shape=(6, 1),
+        shape=(self.hidden_layer.units + 1, 1),
         name='W_i',
         initializer='glorot_uniform',
     )
@@ -66,7 +68,13 @@ class MetaLearner(Layer):
 
   def call(self, inputs):
     feats, labels, params = inputs
-    initial_states =  [params, K.zeros_like(params), K.zeros_like(params)]
+    initial_states =  [
+        K.stack([K.zeros_like(params)] * self.hidden_layer.units, axis=2),
+        K.stack([K.zeros_like(params)] * self.hidden_layer.units, axis=2),
+        params,
+        K.zeros_like(params),
+        K.zeros_like(params)
+    ]
 
     last_output, _, _ = rnn(
       step_function=self.step,
@@ -81,7 +89,7 @@ class MetaLearner(Layer):
 
   def step(self, inputs, states):
     feats, labels = inputs
-    params, f_prev, i_prev = tuple(states)
+    h_prev, c_prev, params, f_prev, i_prev = tuple(states)
 
     predictions = self.wrapper([params, feats])
     loss = K.sum(losses.get(self.wrapper.model.loss)(labels, predictions), axis=1)
@@ -100,9 +108,30 @@ class MetaLearner(Layer):
       preprocessed_loss[1],
     ], axis=2))
 
-    new_params, f, i = self.compute_weights_update(params, gradients, meta_learner_inputs, f_prev, i_prev)
+    params_shape = K.shape(params)
+    h_shape = K.shape(h_prev)
 
-    return [new_params], [new_params, f, i]
+    params = K.reshape(params, (-1, 1))
+    gradients = K.reshape(gradients, (-1, 1))
+    f_prev = K.reshape(f_prev, (-1, 1))
+    i_prev = K.reshape(i_prev, (-1, 1))
+    h_prev = K.reshape(h_prev, (-1, self.hidden_layer.units))
+    c_prev = K.reshape(c_prev, (-1, self.hidden_layer.units))
+    meta_learner_inputs = K.reshape(meta_learner_inputs, (-1, K.int_shape(meta_learner_inputs)[-1]))
+
+    constants = self.hidden_layer.get_constants(meta_learner_inputs, training=None)
+    _, (h, c) = self.hidden_layer.step(meta_learner_inputs, (h_prev, c_prev) + tuple(constants))
+    f = K.sigmoid(K.dot(K.concatenate([h, f_prev], axis=1), self.W_f) + self.b_f)
+    i = K.sigmoid(K.dot(K.concatenate([h, i_prev], axis=1), self.W_i) + self.b_i)
+    new_params = f * params - i * gradients
+
+    new_params = K.reshape(new_params, params_shape)
+    f = K.reshape(f, params_shape)
+    i = K.reshape(i, params_shape)
+    h = K.reshape(h, h_shape)
+    c = K.reshape(c, h_shape)
+
+    return [new_params], [h, c, new_params, f, i]
 
   def preprocess(self, x):
     P = 10.0
@@ -116,22 +145,3 @@ class MetaLearner(Layer):
         m1 * K.log(K.abs(x) + m2) / P - m2,
         m1 * K.sign(x) + m2 * expP * x
     )
-
-  def compute_weights_update(self, params, gradients, h, f_prev, i_prev):
-    params_shape = [x if x is not None else -1 for x in K.int_shape(params)]
-
-    params = K.reshape(params, (-1, 1))
-    gradients = K.reshape(gradients, (-1, 1))
-    f_prev = K.reshape(f_prev, (-1, 1))
-    i_prev = K.reshape(i_prev, (-1, 1))
-    h = K.reshape(h, (-1, K.int_shape(h)[-1]))
-
-    f = K.sigmoid(K.dot(K.concatenate([h, f_prev], axis=1), self.W_f) + self.b_f)
-    i = K.sigmoid(K.dot(K.concatenate([h, i_prev], axis=1), self.W_i) + self.b_i)
-    new_params = f * params - i * gradients
-
-    new_params = K.reshape(new_params, params_shape)
-    f = K.reshape(f, params_shape)
-    i = K.reshape(i, params_shape)
-
-    return new_params, f, i

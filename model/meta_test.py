@@ -20,7 +20,7 @@ class TestLoop(unittest.TestCase):
 
     loss = history.history["loss"]
     self.assertTrue(loss[0] > loss[-1])
-    self.assertTrue(0.02 > loss[-1])
+    self.assertTrue(0.05 > loss[-1])
 
   def create_model(self):
     model = Sequential()
