@@ -31,7 +31,7 @@ class TestWrapper(unittest.TestCase):
       [[0., 0.]] * batch_size,
       [[1., 1.]] * batch_size,
       [[3., 3.]] * batch_size,
-      [[10., 17.]] * batch_size
+      [[12., 16.]] * batch_size
     ])
 
     prediction = wrapper.predict([params, x])

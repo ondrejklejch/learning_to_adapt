@@ -24,7 +24,7 @@ class ModelWrapper(Layer):
       if isinstance(layer, Dense):
         weights = params[:, last_weight:last_weight + last_size * layer.units]
         weights = K.reshape(weights, (-1, last_size, layer.units))
-        x = K.batch_dot(x, weights, axes=[2, 2])
+        x = K.batch_dot(x, weights, axes=[2, 1])
         last_weight += last_size * layer.units
         last_size = layer.units
 
