@@ -16,7 +16,7 @@ def create_meta_learner(model, units=20):
   num_params = len(wrapper.get_all_weights())
 
   training_feats = Input(shape=(None, None, feat_dim,))
-  training_labels = Input(shape=(None, None, num_labels,))
+  training_labels = Input(shape=(None, None, 1,))
   testing_feats = Input(shape=(None, feat_dim,))
   params = Input(shape=(num_params,))
 
@@ -36,6 +36,7 @@ class MetaLearner(Layer):
     super(MetaLearner, self).__init__(**kwargs)
 
     self.wrapper = wrapper
+    self.num_params = len(wrapper.get_all_weights())
     self.hidden_layer = hidden_layer
     self.input_spec = [InputSpec(ndim=4), InputSpec(ndim=4), InputSpec(ndim=2)]
 
@@ -68,21 +69,22 @@ class MetaLearner(Layer):
 
   def call(self, inputs):
     feats, labels, params = inputs
-    initial_states =  [
-        K.stack([K.zeros_like(params)] * self.hidden_layer.units, axis=2),
-        K.stack([K.zeros_like(params)] * self.hidden_layer.units, axis=2),
-        params,
-        K.zeros_like(params),
-        K.zeros_like(params)
-    ]
-
     last_output, _, _ = rnn(
       step_function=self.step,
       inputs=[feats, labels],
-      initial_states=initial_states,
+      initial_states=self.get_initital_state(params),
     )
 
-    return last_output[0]
+    return K.reshape(last_output[0], (1, self.num_params))
+
+  def get_initital_state(self, params):
+    return  [
+        K.zeros((self.num_params, self.hidden_layer.units)),
+        K.zeros((self.num_params, self.hidden_layer.units)),
+        K.reshape(params, (self.num_params, 1)),
+        K.zeros((self.num_params, 1)),
+        K.zeros((self.num_params, 1)),
+    ]
 
   def compute_output_shape(self, input_shape):
     return input_shape[2]
@@ -91,47 +93,43 @@ class MetaLearner(Layer):
     feats, labels = inputs
     h_prev, c_prev, params, f_prev, i_prev = tuple(states)
 
-    predictions = self.wrapper([params, feats])
-    loss = K.sum(losses.get(self.wrapper.model.loss)(labels, predictions), axis=1)
-    gradients = K.stop_gradient(K.gradients(loss, [params]))
-    gradients = K.squeeze(K.gradients(loss, [params]), 0)
+    inputs, gradients = self.compute_inputs(params, feats, labels)
+    h, c = self.lstm_step(inputs, h_prev, c_prev)
+    new_params, f, i = self.update_params(params, gradients, h, f_prev, i_prev)
 
-    loss = K.repeat_elements(K.expand_dims(loss, 1), K.int_shape(params)[-1], axis=1)
+    return [new_params], [h, c, new_params, f, i]
+
+  def compute_inputs(self, params, feats, labels):
+    predictions = self.wrapper([K.transpose(params), feats])
+    loss = K.sum(losses.get(self.wrapper.model.loss)(labels, predictions))
+    gradients = K.stop_gradient(K.squeeze(K.gradients(loss, [params]), 0))
+
+    loss = loss * K.ones_like(params)
     preprocessed_gradients = self.preprocess(gradients)
     preprocessed_loss = self.preprocess(loss)
 
-    meta_learner_inputs = K.stop_gradient(K.stack([
+    inputs = K.stop_gradient(K.concatenate([
       params,
       preprocessed_gradients[0],
       preprocessed_gradients[1],
       preprocessed_loss[0],
       preprocessed_loss[1],
-    ], axis=2))
+    ], axis=1))
 
-    params_shape = K.shape(params)
-    h_shape = K.shape(h_prev)
+    return inputs, gradients
 
-    params = K.reshape(params, (-1, 1))
-    gradients = K.reshape(gradients, (-1, 1))
-    f_prev = K.reshape(f_prev, (-1, 1))
-    i_prev = K.reshape(i_prev, (-1, 1))
-    h_prev = K.reshape(h_prev, (-1, self.hidden_layer.units))
-    c_prev = K.reshape(c_prev, (-1, self.hidden_layer.units))
-    meta_learner_inputs = K.reshape(meta_learner_inputs, (-1, K.int_shape(meta_learner_inputs)[-1]))
+  def lstm_step(self, inputs, h, c):
+    constants = self.hidden_layer.get_constants(inputs, training=None)
+    _, (h, c) = self.hidden_layer.step(inputs, (h, c) + tuple(constants))
 
-    constants = self.hidden_layer.get_constants(meta_learner_inputs, training=None)
-    _, (h, c) = self.hidden_layer.step(meta_learner_inputs, (h_prev, c_prev) + tuple(constants))
-    f = K.sigmoid(K.dot(K.concatenate([h, f_prev], axis=1), self.W_f) + self.b_f)
-    i = K.sigmoid(K.dot(K.concatenate([h, i_prev], axis=1), self.W_i) + self.b_i)
+    return h, c
+
+  def update_params(self, params, gradients, h, f, i):
+    f = K.sigmoid(K.dot(K.concatenate([h, f], axis=1), self.W_f) + self.b_f)
+    i = K.sigmoid(K.dot(K.concatenate([h, i], axis=1), self.W_i) + self.b_i)
     new_params = f * params - i * gradients
 
-    new_params = K.reshape(new_params, params_shape)
-    f = K.reshape(f, params_shape)
-    i = K.reshape(i, params_shape)
-    h = K.reshape(h, h_shape)
-    c = K.reshape(c, h_shape)
-
-    return [new_params], [h, c, new_params, f, i]
+    return new_params, f, i
 
   def preprocess(self, x):
     P = 10.0
