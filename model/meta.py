@@ -2,6 +2,7 @@ from keras import backend as K
 from keras import losses
 from keras.engine import InputSpec
 from keras.engine.topology import Layer
+from keras.initializers import Ones, Zeros
 from keras.layers import Activation, Dense, Input, LSTM, Recurrent
 from keras.models import Model
 
@@ -20,7 +21,7 @@ def create_meta_learner(model, units=20):
   testing_feats = Input(shape=(None, feat_dim,))
   params = Input(shape=(num_params,))
 
-  meta_learner = MetaLearner(wrapper, LSTM(units, implementation=2))
+  meta_learner = MetaLearner(wrapper, units)
   new_params = meta_learner([training_feats, training_labels, params])
   predictions = wrapper([new_params, testing_feats])
 
@@ -32,19 +33,36 @@ def create_meta_learner(model, units=20):
 
 class MetaLearner(Layer):
 
-  def __init__(self, wrapper, hidden_layer, **kwargs):
+  def __init__(self, wrapper, units, **kwargs):
     super(MetaLearner, self).__init__(**kwargs)
 
     self.wrapper = wrapper
     self.num_params = len(wrapper.get_all_weights())
-    self.hidden_layer = hidden_layer
+    self.input_dim = 5
+    self.units = units
     self.input_spec = [InputSpec(ndim=4), InputSpec(ndim=4), InputSpec(ndim=2)]
 
   def build(self, input_shapes):
-    self.hidden_layer.build((None, None, 5))
+    self.kernel = self.add_weight(
+        shape=(self.input_dim, self.units * 4),
+        name='kernel',
+        initializer='glorot_uniform',
+    )
+
+    self.recurrent_kernel = self.add_weight(
+        shape=(self.units, self.units * 4),
+        name='recurrent_kernel',
+        initializer='orthogonal',
+    )
+
+    self.bias = self.add_weight(
+        shape=(self.units * 4,),
+        name='bias',
+        initializer=self.bias_initializer,
+    )
 
     self.W_f = self.add_weight(
-        shape=(self.hidden_layer.units + 1, 1),
+        shape=(self.units + 1, 1),
         name='W_f',
         initializer='glorot_uniform',
     )
@@ -56,7 +74,7 @@ class MetaLearner(Layer):
     )
 
     self.W_i = self.add_weight(
-        shape=(self.hidden_layer.units + 1, 1),
+        shape=(self.units + 1, 1),
         name='W_i',
         initializer='glorot_uniform',
     )
@@ -66,6 +84,13 @@ class MetaLearner(Layer):
         name='b_i',
         initializer='zeros',
     )
+
+  def bias_initializer(self, shape, *args, **kwargs):
+    return K.concatenate([
+        Zeros()((self.units,), *args, **kwargs),
+        Ones()((self.units,), *args, **kwargs),
+        Zeros()((self.units * 2,), *args, **kwargs),
+    ])
 
   def call(self, inputs):
     feats, labels, params = inputs
@@ -79,8 +104,8 @@ class MetaLearner(Layer):
 
   def get_initital_state(self, params):
     return  [
-        K.zeros((self.num_params, self.hidden_layer.units)),
-        K.zeros((self.num_params, self.hidden_layer.units)),
+        K.zeros((self.num_params, self.units)),
+        K.zeros((self.num_params, self.units)),
         K.reshape(params, (self.num_params, 1)),
         K.zeros((self.num_params, 1)),
         K.zeros((self.num_params, 1)),
@@ -119,9 +144,21 @@ class MetaLearner(Layer):
     return inputs, gradients
 
   def lstm_step(self, inputs, h, c):
-    constants = self.hidden_layer.get_constants(inputs, training=None)
-    _, (h, c) = self.hidden_layer.step(inputs, (h, c) + tuple(constants))
+    z = K.dot(inputs, self.kernel)
+    z += K.dot(h, self.recurrent_kernel)
+    z = K.bias_add(z, self.bias)
 
+    z0 = z[:, :self.units]
+    z1 = z[:, self.units: 2 * self.units]
+    z2 = z[:, 2 * self.units: 3 * self.units]
+    z3 = z[:, 3 * self.units:]
+
+    i = K.hard_sigmoid(z0)
+    f = K.hard_sigmoid(z1)
+    c = f * c + i * K.tanh(z2)
+    o = K.hard_sigmoid(z3)
+
+    h = o * K.tanh(c)
     return h, c
 
   def update_params(self, params, gradients, h, f, i):
