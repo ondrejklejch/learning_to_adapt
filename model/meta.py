@@ -170,8 +170,8 @@ class MetaLearner(Layer):
 
   def preprocess(self, x):
     P = 10.0
-    expP = K.exp(P)
-    negExpP = K.exp(-P)
+    expP = K.cast(K.exp(P), K.floatx())
+    negExpP = K.cast(K.exp(-P), K.floatx())
 
     m1 = K.cast(K.greater(K.abs(x), negExpP), K.floatx())
     m2 = K.cast(K.less_equal(K.abs(x), negExpP), K.floatx())
