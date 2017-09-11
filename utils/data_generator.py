@@ -14,6 +14,9 @@ def load_data(params, feats, utt2spk, adapt_pdfs, test_pdfs, num_frames=1000):
     test_pdfs = collections.defaultdict(list)
 
     for (utt, utt_feats) in feats_reader:
+        if utt not in utt_to_adapt_pdfs or utt not in utt_to_test_pdfs:
+            continue
+
         spk = utt_to_spk[utt]
         utt_adapt_pdfs = utt_to_adapt_pdfs[utt]
         utt_test_pdfs = utt_to_test_pdfs[utt]
