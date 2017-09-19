@@ -1,8 +1,31 @@
 from keras import backend as K
+from keras.activations import get as get_activation
 from keras.engine.topology import Layer
 from keras.layers import Activation, Dense
 import numpy as np
 
+
+def create_model_wrapper(model):
+  feat_dim = model.layers[0].input_shape[-1]
+  num_labels = model.layers[-1].output_shape[-1]
+  num_params = len(get_model_weights(model))
+  loss = model.loss
+
+  layers = []
+  for layer in model.layers:
+    if isinstance(layer, Dense):
+      layers.append(("dense", layer.units, layer.use_bias, layer.activation.__name__))
+    elif isinstance(layer, Activation):
+      layers.append(("activation", layer.activation.__name__))
+
+  return ModelWrapper(feat_dim, num_labels, num_params, loss, layers)
+
+def get_model_weights(model):
+  weights = []
+  for w in model.get_weights():
+    weights.extend(w.flatten())
+
+  return np.array(weights)
 
 class ModelWrapper(Layer):
   """
@@ -11,40 +34,48 @@ class ModelWrapper(Layer):
   a wrapper g(w, x) such that g(w, x) == f(x).
   """
 
-  def __init__(self, model, **kwargs):
+  def __init__(self, feat_dim, num_labels, num_params, loss, layers, **kwargs):
     super(ModelWrapper, self).__init__(**kwargs)
-    self.model = model
+
+    self.feat_dim = feat_dim
+    self.num_labels = num_labels
+    self.num_params = num_params
+    self.loss = loss
+    self.layers = layers
 
   def call(self, inputs):
     params, x = inputs
 
     last_weight = 0
     last_size = K.int_shape(x)[-1]
-    for layer in self.model.layers:
-      if isinstance(layer, Dense):
-        weights = params[:, last_weight:last_weight + last_size * layer.units]
-        weights = K.reshape(weights, (-1, last_size, layer.units))
+    for layer in self.layers:
+      if layer[0] == "dense":
+        weights = params[:, last_weight:last_weight + last_size * layer[1]]
+        weights = K.reshape(weights, (-1, last_size, layer[1]))
         x = K.batch_dot(x, weights, axes=[2, 1])
-        last_weight += last_size * layer.units
-        last_size = layer.units
+        last_weight += last_size * layer[1]
+        last_size = layer[1]
 
-        if layer.use_bias:
+        if layer[2]:
           weights = K.expand_dims(params[:, last_weight:last_weight + last_size], 1)
           x = x + weights
           last_weight += last_size
 
-        x = layer.activation(x)
-      if isinstance(layer, Activation):
-        x = layer.activation(x)
+        x = get_activation(layer[3])(x)
+      if layer[0] == "activation":
+        x = get_activation(layer[1])(x)
 
     return x
 
   def compute_output_shape(self, input_shape):
-    return input_shape[1][:-1] + (self.model.output_shape[-1],)
+    return input_shape[1][:-1] + (self.num_labels,)
 
-  def get_all_weights(self):
-    weights = []
-    for w in self.model.get_weights():
-      weights.extend(w.flatten())
+  def get_config(self):
+    return {
+      "feat_dim": self.feat_dim,
+      "num_labels": self.num_labels,
+      "num_params": self.num_params,
+      "loss": self.loss,
+      "layers": self.layers,
+    }
 
-    return np.array(weights)

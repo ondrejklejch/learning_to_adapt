@@ -3,7 +3,7 @@ from keras.layers import Activation, Dense, Input
 import numpy as np
 import unittest
 
-from wrapper import ModelWrapper
+from wrapper import create_model_wrapper, get_model_weights
 
 
 class TestWrapper(unittest.TestCase):
@@ -40,13 +40,13 @@ class TestWrapper(unittest.TestCase):
   def testGetAllWeights(self):
     model = self.build_model()
     model.set_weights((np.eye(2), np.zeros(2)))
-    wrapper = ModelWrapper(model)
+    wrapper = create_model_wrapper(model)
 
     expected_weights = np.array([1., 0., 0., 1., 0., 0.])
-    np.testing.assert_allclose(expected_weights, wrapper.get_all_weights())
+    np.testing.assert_allclose(expected_weights, get_model_weights(model))
 
   def build_wrapped_model(self, model, batch_size):
-    wrapper = ModelWrapper(model)
+    wrapper = create_model_wrapper(model)
 
     params = Input(shape=(6,))
     x = Input(shape=(batch_size, 2,))

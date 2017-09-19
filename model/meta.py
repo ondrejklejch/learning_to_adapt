@@ -3,18 +3,18 @@ from keras import losses
 from keras.engine import InputSpec
 from keras.engine.topology import Layer
 from keras.initializers import Ones, Zeros
-from keras.layers import Activation, Dense, Input, LSTM, Recurrent
+from keras.layers import Activation, Dense, Input, LSTM, Recurrent, deserialize
 from keras.models import Model
 
 from loop import rnn
-from wrapper import ModelWrapper
+from wrapper import create_model_wrapper
 
 
 def create_meta_learner(model, units=20):
-  wrapper = ModelWrapper(model)
-  feat_dim = wrapper.model.layers[0].input_shape[-1]
-  num_labels = wrapper.model.layers[-1].output_shape[-1]
-  num_params = len(wrapper.get_all_weights())
+  wrapper = create_model_wrapper(model)
+  feat_dim = wrapper.feat_dim
+  num_labels = wrapper.num_labels
+  num_params = wrapper.num_params
 
   training_feats = Input(shape=(None, None, feat_dim,))
   training_labels = Input(shape=(None, None, 1,))
@@ -37,7 +37,6 @@ class MetaLearner(Layer):
     super(MetaLearner, self).__init__(**kwargs)
 
     self.wrapper = wrapper
-    self.num_params = len(wrapper.get_all_weights())
     self.input_dim = 5
     self.units = units
     self.input_spec = [InputSpec(ndim=4), InputSpec(ndim=4), InputSpec(ndim=2)]
@@ -100,15 +99,15 @@ class MetaLearner(Layer):
       initial_states=self.get_initital_state(params),
     )
 
-    return K.reshape(last_output[0], (1, self.num_params))
+    return K.reshape(last_output[0], (1, self.wrapper.num_params))
 
   def get_initital_state(self, params):
     return  [
-        K.zeros((self.num_params, self.units)),
-        K.zeros((self.num_params, self.units)),
-        K.reshape(params, (self.num_params, 1)),
-        K.zeros((self.num_params, 1)),
-        K.zeros((self.num_params, 1)),
+        K.zeros((self.wrapper.num_params, self.units)),
+        K.zeros((self.wrapper.num_params, self.units)),
+        K.reshape(params, (self.wrapper.num_params, 1)),
+        K.zeros((self.wrapper.num_params, 1)),
+        K.zeros((self.wrapper.num_params, 1)),
     ]
 
   def compute_output_shape(self, input_shape):
@@ -126,7 +125,7 @@ class MetaLearner(Layer):
 
   def compute_inputs(self, params, feats, labels):
     predictions = self.wrapper([K.transpose(params), feats])
-    loss = K.sum(losses.get(self.wrapper.model.loss)(labels, predictions))
+    loss = K.sum(losses.get(self.wrapper.loss)(labels, predictions))
     gradients = K.stop_gradient(K.squeeze(K.gradients(loss, [params]), 0))
 
     loss = loss * K.ones_like(params)
@@ -180,3 +179,19 @@ class MetaLearner(Layer):
         m1 * K.log(K.abs(x) + m2) / P - m2,
         m1 * K.sign(x) + m2 * expP * x
     )
+
+  def get_config(self):
+    return {
+      'units': self.units,
+      'wrapper': {
+        'class_name': self.wrapper.__class__.__name__,
+        'config': self.wrapper.get_config()
+      }
+    }
+
+  @classmethod
+  def from_config(cls, config, custom_objects=None):
+    units = config.pop('units')
+    wrapper = deserialize(config.pop('wrapper'), custom_objects=custom_objects)
+
+    return cls(wrapper, units)

@@ -3,7 +3,7 @@ import sys
 from keras.models import load_model
 from keras.optimizers import Adam
 
-from model import create_meta_learner, ModelWrapper
+from model import create_meta_learner, create_model_wrapper, get_model_weights
 from utils import load_data
 
 
@@ -25,6 +25,6 @@ if __name__ == '__main__':
     )
     meta.summary()
 
-    params = ModelWrapper(model).get_all_weights()
+    params = get_model_weights(model)
     x, y = load_data(params, feats, utt2spk, adapt_pdfs, test_pdfs)
     meta.fit(x, y, epochs=100, batch_size=1)
