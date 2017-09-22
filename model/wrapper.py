@@ -17,7 +17,7 @@ def create_model_wrapper(model):
     if isinstance(layer, Dense):
       layers.append(("dense", layer.units, layer.use_bias, layer.activation.__name__))
     if isinstance(layer, FeatureTransform):
-      layers.append(("feature_transform", layer.units))
+      layers.append(("feature_transform"))
     if isinstance(layer, LHUC):
       layers.append(("lhuc"))
     elif isinstance(layer, Activation):
@@ -68,9 +68,9 @@ class ModelWrapper(Layer):
 
         x = get_activation(layer[3])(x)
       elif layer[0] == "feature_transform":
-        rescale = K.expand_dims(params[:, last_weight:last_weight + layer[1]], 1)
-        shift = K.expand_dims(params[:, last_weight + layer[1]:last_weight + 2 * layer[1]], 1)
-        last_weight += 2 * layer[1]
+        rescale = K.expand_dims(params[:, last_weight:last_weight + last_size], 1)
+        shift = K.expand_dims(params[:, last_weight + last_size:last_weight + 2 * last_size], 1)
+        last_weight += 2 * last_size
         x = x * rescale + shift
       elif layer[0] == "lhuc":
         r = K.expand_dims(params[:, last_weight:last_weight + last_size], 1)

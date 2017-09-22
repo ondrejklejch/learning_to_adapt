@@ -3,7 +3,7 @@ import sys
 from keras.models import load_model
 from keras.optimizers import Adam
 
-from model import create_meta_learner, create_model_wrapper, get_model_weights
+from model import create_meta_learner, create_model_wrapper, get_model_weights, LHUC, FeatureTransform
 from utils import load_data
 
 
@@ -13,18 +13,24 @@ if __name__ == '__main__':
     utt2spk = sys.argv[3]
     adapt_pdfs = sys.argv[4]
     test_pdfs = sys.argv[5]
+    output_path = sys.argv[6]
 
-    model = load_model(model_path)
+    custom_objects = {
+        'FeatureTransform': FeatureTransform,
+        'LHUC': LHUC
+    }
+    model = load_model(model_path, custom_objects=custom_objects)
     model.compile(loss='sparse_categorical_crossentropy', optimizer='adam')
 
     meta = create_meta_learner(model, units=10)
     meta.compile(
         loss=model.loss,
-        optimizer=Adam(lr=0.001, clipnorm=1.),
+        optimizer=Adam(lr=0.1, clipnorm=5.),
         metrics=['accuracy']
     )
     meta.summary()
 
     params = get_model_weights(model)
     x, y = load_data(params, feats, utt2spk, adapt_pdfs, test_pdfs)
-    meta.fit(x, y, epochs=100, batch_size=1)
+    meta.fit(x, y, epochs=100, batch_size=1, shuffle=True)
+    meta.save(output_path)

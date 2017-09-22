@@ -5,8 +5,6 @@ class LHUC(Layer):
   """
   Straightforward LHUC just adding a scalar with no activation after a layer.
   """
-  def __init__(self, **kwargs):
-    super(LHUC, self).__init__(**kwargs)
 
   def build(self, input_shape):
     self.r = self.add_weight(
@@ -25,19 +23,15 @@ class LHUC(Layer):
 
 class FeatureTransform(Layer):
 
-  def __init__(self, units, **kwargs):
-    super(FeatureTransform, self).__init__(**kwargs)
-    self.units = units
-
   def build(self, input_shape):
     self.rescale = self.add_weight(
-      shape=(self.units,),
+      shape=(input_shape[1],),
       initializer="ones",
       name="rescale",
       trainable=self.trainable)
 
     self.shift = self.add_weight(
-      shape=(self.units,),
+      shape=(input_shape[1],),
       initializer="zeros",
       name="shift",
       trainable=self.trainable)

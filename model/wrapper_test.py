@@ -57,7 +57,7 @@ class TestWrapper(unittest.TestCase):
 
   def build_model(self):
     model = Sequential()
-    model.add(FeatureTransform(2, input_shape=(2,)))
+    model.add(FeatureTransform(input_shape=(2,)))
     model.add(Dense(2))
     model.add(Activation('relu'))
     model.add(LHUC())

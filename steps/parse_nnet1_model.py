@@ -33,7 +33,7 @@ def parse_feature_transform(line_buffer):
       shift = parse_vector(line)
 
   return [
-    FeatureTransform(rescale.shape[0], input_shape=(rescale.shape[0],), weights=[rescale, shift])
+    FeatureTransform(input_shape=(rescale.shape[0],), weights=[rescale, shift])
   ]
 
 
