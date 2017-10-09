@@ -17,9 +17,9 @@ def create_model_wrapper(model):
     if isinstance(layer, Dense):
       layers.append(("dense", layer.units, layer.use_bias, layer.activation.__name__))
     if isinstance(layer, FeatureTransform):
-      layers.append(("feature_transform"))
+      layers.append(("feature_transform",))
     if isinstance(layer, LHUC):
-      layers.append(("lhuc"))
+      layers.append(("lhuc",))
     elif isinstance(layer, Activation):
       layers.append(("activation", layer.activation.__name__))
 
