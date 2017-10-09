@@ -3,8 +3,8 @@ from keras.layers import Activation, Dense, Input
 import numpy as np
 import unittest
 
-from layers import FeatureTransform, LHUC
-from wrapper import create_model_wrapper, get_model_weights
+from learning_to_adapt.model.layers import FeatureTransform, LHUC
+from learning_to_adapt.model.wrapper import create_model_wrapper, get_model_weights
 
 
 class TestWrapper(unittest.TestCase):

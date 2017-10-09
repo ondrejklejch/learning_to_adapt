@@ -3,7 +3,7 @@ from keras.models import Sequential
 import numpy as np
 import unittest
 
-from meta import create_meta_learner
+from learning_to_adapt.model.meta import create_meta_learner
 
 
 class TestLoop(unittest.TestCase):

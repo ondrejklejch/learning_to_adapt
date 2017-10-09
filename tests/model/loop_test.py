@@ -5,7 +5,7 @@ from keras.engine.topology import Layer
 import numpy as np
 import unittest
 
-from loop import rnn
+from learning_to_adapt.model.loop import rnn
 
 
 class TestLoop(unittest.TestCase):

@@ -4,8 +4,8 @@
 . cmd.sh
 
 # TODO: Use locking script to obtain GPU
-export CUDA_VISIBLE_DEVICES=3
-export TF_CPP_MIN_LOG_LEVEL=2
+# export CUDA_VISIBLE_DEVICES=2
+# export TF_CPP_MIN_LOG_LEVEL=2
 
 ali="exp/dnn_256-7-small_softmax-dbn_dnn/align_dev2010/"
 data="data/dev2010/"
@@ -19,4 +19,4 @@ utt2spk=$data/utt2spk
 pdfs="ark:ali-to-pdf $model ark:'gunzip -c $ali/ali.*.gz |' ark,t:- |"
 output="exp/meta.h5"
 
-python2.7 train.py $keras_model "$feats" $utt2spk "$pdfs" "$pdfs" $output
+python2.7 steps/train.py $keras_model "$feats" $utt2spk "$pdfs" "$pdfs" $output

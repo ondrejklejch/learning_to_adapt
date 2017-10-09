@@ -3,8 +3,8 @@ import sys
 from keras.models import load_model
 from keras.optimizers import Adam
 
-from model import create_meta_learner, create_model_wrapper, get_model_weights, LHUC, FeatureTransform
-from utils import load_data
+from learning_to_adapt.model import create_meta_learner, create_model_wrapper, get_model_weights, FeatureTransform, LHUC
+from learning_to_adapt.utils import load_data
 
 
 if __name__ == '__main__':
