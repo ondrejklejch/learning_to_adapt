@@ -2,7 +2,7 @@ import sys
 import numpy as np
 from keras.models import Sequential
 from keras.layers import Dense, Activation
-from model.layers import LHUC, FeatureTransform
+from learning_to_adapt.model.layers import LHUC, FeatureTransform
 
 
 def parse_nnet1(line_buffer, with_lhuc_layers=False):
@@ -124,7 +124,7 @@ if __name__ == "__main__":
     components.extend(parse_feature_transform(f))
 
   with open(model, "r") as f:
-    components.extend(parse_nnet1(f))
+    components.extend(parse_nnet1(f, with_lhuc_layers=True))
 
   model = Sequential()
   for component in components:
