@@ -16,33 +16,77 @@
 ##  You should have received a copy of the GNU General Public License
 ##  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-
+import itertools
+import json
+from signal import signal, SIGPIPE, SIG_DFL
 import sys
-import numpy
+
+import numpy as np
 import keras
 import kaldi_io
-from signal import signal, SIGPIPE, SIG_DFL
+import tensorflow as tf
+
 from learning_to_adapt.model import FeatureTransform, LHUC
+from learning_to_adapt.utils import load_utt_to_pdfs
+
+config = tf.ConfigProto()
+config.intra_op_parallelism_threads=1
+config.inter_op_parallelism_threads=1
+keras.backend.tensorflow_backend.set_session(tf.Session(config=config))
+
+
+def adapt(model, method, config, x, y):
+    config = load_config(config)
+    for l in model.layers:
+        l.trainable = l.name.startswith('lhuc')
+
+    model.compile(loss='sparse_categorical_crossentropy', optimizer=keras.optimizers.SGD(lr=config["lr"]))
+    model.fit(x, y, epochs=config["epochs"], verbose=0)
+
+def load_config(config):
+    with open(config, 'r') as f:
+        return json.load(f)
 
 if __name__ == '__main__':
-    adaptation_feats = sys.argv[1]
-    adaptation_pdfs = sys.argv[2]
-    adaptation_frames = sys.argv[3]
-    model = sys.argv[4]
-    priors = sys.argv[5]
+    adaptation_method = sys.argv[1]
+    adaptation_config = sys.argv[2]
+    adaptation_pdfs = sys.argv[3]
+    adaptation_frames = int(sys.argv[4])
+    model = sys.argv[5]
+    priors = sys.argv[6]
 
     if not model.endswith('.h5'):
         raise TypeError ('Unsupported model type. Please use h5 format. Update Keras if needed')
 
     ## Load model
     m = keras.models.load_model(model, custom_objects={'FeatureTransform': FeatureTransform, 'LHUC': LHUC})
-    p = numpy.genfromtxt(priors, delimiter=',')
+    p = np.genfromtxt(priors, delimiter=',')
 
     with kaldi_io.SequentialBaseFloatMatrixReader("ark:-") as arkIn, \
             kaldi_io.BaseFloatMatrixWriter("ark,t:-") as arkOut:
         signal(SIGPIPE, SIG_DFL)
 
-        for uttId, featMat in arkIn:
-            logProbMat = numpy.log(m.predict(featMat) / p)
-            logProbMat[logProbMat == -numpy.inf] = -100
-            arkOut.write(uttId, logProbMat)
+        # Reads adaptation_frames from first utterances to obtain adaptation data.
+        utt_to_pdfs = load_utt_to_pdfs(adaptation_pdfs)
+        feats = []
+        pdfs = []
+        utt_buffer = []
+        for utt, utt_feats in arkIn:
+            feats.append(utt_feats)
+            pdfs.append(utt_to_pdfs[utt])
+            utt_buffer.append((utt, utt_feats))
+
+            if np.concatenate(feats).shape[0] >= adaptation_frames:
+                break
+
+        # Adapts model using adaptation data
+        feats = np.concatenate(feats)[:adaptation_frames]
+        pdfs = np.concatenate(pdfs)[:adaptation_frames]
+        adapt(m, adaptation_method, adaptation_config, feats, pdfs)
+
+        # Decodes everything with the adapted model.
+        arkIn = itertools.chain(utt_buffer, arkIn)
+        for utt, utt_feats in arkIn:
+            logProbMat = np.log(m.predict(utt_feats) / p)
+            logProbMat[logProbMat == -np.inf] = -100
+            arkOut.write(utt, logProbMat)
