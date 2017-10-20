@@ -32,6 +32,16 @@ def get_model_weights(model):
 
   return np.array(weights)
 
+def set_model_weights(model, weights):
+  for l in model.layers:
+    layer_weights = []
+    for w in l.weights:
+      num_weights = np.prod(w.shape)
+      layer_weights.append(weights[:num_weights].reshape(w.shape))
+      weights = weights[num_weights:]
+
+    l.set_weights(layer_weights)
+
 class ModelWrapper(Layer):
   """
   This wrapper allows to use DNN's parameters as inputs to the model,

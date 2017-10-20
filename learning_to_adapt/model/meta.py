@@ -4,16 +4,15 @@ from keras.engine import InputSpec
 from keras.engine.topology import Layer
 from keras.initializers import Ones, Zeros
 from keras.layers import Input, GaussianNoise, deserialize
-from keras.models import Model
+from keras.models import Model, load_model
 
 from loop import rnn
-from wrapper import create_model_wrapper
+from wrapper import ModelWrapper, create_model_wrapper
 
 
 def create_meta_learner(model, units=20):
   wrapper = create_model_wrapper(model)
   feat_dim = wrapper.feat_dim
-  num_labels = wrapper.num_labels
   num_params = wrapper.num_params
 
   training_feats = Input(shape=(None, None, feat_dim,))
@@ -30,6 +29,25 @@ def create_meta_learner(model, units=20):
     inputs=[params, training_feats, training_labels, testing_feats],
     outputs=[predictions]
   )
+
+
+def load_meta_learner(model, path):
+  model.compile(loss='sparse_categorical_crossentropy', optimizer='sgd')
+  wrapper = create_model_wrapper(model)
+  feat_dim = wrapper.feat_dim
+  num_params = wrapper.num_params
+
+  custom_objects={'MetaLearner': MetaLearner, 'ModelWrapper': ModelWrapper}
+  meta_learner = load_model(path, custom_objects=custom_objects).get_layer('meta_learner_1')
+
+  training_feats = Input(shape=(None, None, feat_dim,))
+  training_labels = Input(shape=(None, None, 1,))
+  params = Input(shape=(num_params,))
+
+  meta_learner = MetaLearner(wrapper, meta_learner.units, weights=meta_learner.get_weights())
+  new_params = meta_learner([training_feats, training_labels, params])
+
+  return Model(inputs=[params, training_feats, training_labels], outputs=[new_params])
 
 
 class MetaLearner(Layer):

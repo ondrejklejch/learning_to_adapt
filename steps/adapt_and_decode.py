@@ -26,7 +26,7 @@ import keras
 import kaldi_io
 import tensorflow as tf
 
-from learning_to_adapt.model import FeatureTransform, LHUC
+from learning_to_adapt.model import FeatureTransform, LHUC, load_meta_learner, get_model_weights, set_model_weights
 from learning_to_adapt.utils import load_utt_to_pdfs
 
 config = tf.ConfigProto()
@@ -37,11 +37,32 @@ keras.backend.tensorflow_backend.set_session(tf.Session(config=config))
 
 def adapt(model, method, config, x, y):
     config = load_config(config)
+
+    if method == "LHUC":
+        adapt_lhuc(model, config, x, y)
+
+    if method == "META":
+        adapt_meta(model, config, x, y)
+
+
+def adapt_lhuc(model, config, x, y):
     for l in model.layers:
         l.trainable = l.name.startswith('lhuc')
 
     model.compile(loss='sparse_categorical_crossentropy', optimizer=keras.optimizers.SGD(lr=config["lr"]))
     model.fit(x, y, epochs=config["epochs"], verbose=0)
+
+
+def adapt_meta(model, config, x, y):
+    meta = load_meta_learner(model, config["model"])
+
+    params = get_model_weights(model).reshape((1, -1))
+    x = x.reshape((1, 1) + x.shape)
+    y = y.reshape((1, 1) + y.shape)
+
+    new_params = meta.predict([params, x, y])
+    set_model_weights(model, new_params[0])
+
 
 def load_config(config):
     with open(config, 'r') as f:

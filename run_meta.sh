@@ -3,18 +3,13 @@
 . cmd.sh
 . path.sh
 
-nj=4
-dir=exp/lhuc
+nj=1
+dir=exp/meta
 configs=$dir/configs
 mkdir -p $configs
-rm -rf $configs/*
-for lr in 0.01 0.025 0.05 0.1; do
-    for epochs in 1 3 5; do
-        name="lhuc_${lr}_${epochs}"
-        echo "{\"lr\": $lr, \"epochs\": $epochs}" > $configs/$name.json
-        echo -e "${name}\t${configs}/${name}.json" >> $configs/experiments.scp
-    done
-done
+
+echo "{\"model\": \"exp/meta/meta.h5\"}" > $configs/meta.json
+echo -e "meta\t${configs}/meta.json" >> $configs/experiments.scp
 
 mkdir -p $configs/split${nj}
 for job in `seq 1 $nj`; do
@@ -42,7 +37,7 @@ for i in `seq $num_spks`; do
 done
 
 $cmd JOB=1:$nj $decode_dir/log/experiments.JOB.log \
-    steps/run_experiments.sh LHUC $configs/split${nj}/JOB.scp $data $pdfs $frames $model $graph $decode_dir
+    steps/run_experiments.sh META $configs/split${nj}/JOB.scp $data $pdfs $frames $model $graph $decode_dir
 
 ln -s `pwd`/$model/final.mdl $decode_dir/final.mdl
 for experiment in `ls -1 $decode_dir | grep -v log`; do
