@@ -126,6 +126,12 @@ if __name__ == "__main__":
   with open(model, "r") as f:
     components.extend(parse_nnet1(f, with_lhuc_layers=True))
 
+  # Remove LHUC layer after softmax layer
+  for component in reversed(components):
+    if component.name.startswith("lhuc"):
+      components.remove(component)
+      break
+
   model = Sequential()
   for component in components:
     model.add(component)
