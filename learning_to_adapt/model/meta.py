@@ -161,8 +161,8 @@ class MetaLearner(Layer):
     return h, c
 
   def update_params(self, params, gradients, h, f, i):
-    f = K.sigmoid(K.dot(K.concatenate([h, f], axis=1), self.W_f) + self.b_f)
-    i = K.sigmoid(K.dot(K.concatenate([h, i], axis=1), self.W_i) + self.b_i)
+    f = K.relu(K.dot(K.concatenate([h, f], axis=1), self.W_f) + self.b_f)
+    i = K.relu(K.dot(K.concatenate([h, i], axis=1), self.W_i) + self.b_i)
     new_params = f * params - i * gradients
 
     return new_params, f, i

@@ -22,15 +22,15 @@ if __name__ == '__main__':
     model = load_model(model_path, custom_objects=custom_objects)
     model.compile(loss='sparse_categorical_crossentropy', optimizer='adam')
 
-    meta = create_meta_learner(model, units=10)
+    meta = create_meta_learner(model, units=64)
     meta.compile(
         loss=model.loss,
-        optimizer=Adam(lr=0.1, clipnorm=5.),
+        optimizer=Adam(),
         metrics=['accuracy']
     )
     meta.summary()
 
     params = get_model_weights(model)
-    x, y = load_data(params, feats, utt2spk, adapt_pdfs, test_pdfs)
-    meta.fit(x, y, epochs=100, batch_size=1, shuffle=True)
+    x, y = load_data(params, feats, utt2spk, adapt_pdfs, test_pdfs, steps=1)
+    meta.fit(x, y, epochs=5, batch_size=1, shuffle=True)
     meta.save(output_path)
