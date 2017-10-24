@@ -21,7 +21,10 @@ def load_data(params, feats, utt2spk, adapt_pdfs, test_pdfs, num_frames=1000, st
         utt_adapt_pdfs = utt_to_adapt_pdfs[utt]
         utt_test_pdfs = utt_to_test_pdfs[utt]
 
-        # TODO: ensure that feats and all pdfs have same shape.
+        if (utt_feats.shape[0] != utt_adapt_pdfs.shape[0] or
+                utt_feats.shape[0] != utt_test_pdfs.shape[0]):
+            continue
+
         feats[spk].append(utt_feats)
         adapt_pdfs[spk].append(utt_adapt_pdfs)
         test_pdfs[spk].append(utt_test_pdfs)
