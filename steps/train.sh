@@ -4,10 +4,11 @@
 . cmd.sh
 
 # TODO: Use locking script to obtain GPU
-# export CUDA_VISIBLE_DEVICES=2
-# export TF_CPP_MIN_LOG_LEVEL=2
+export CUDA_VISIBLE_DEVICES=2
+export TF_CPP_MIN_LOG_LEVEL=2
 
-ali="exp/dnn_256-7-small_softmax-dbn_dnn/align_dev2010/"
+adapt_ali="exp/dnn_256-7-small_softmax-dbn_dnn/decode_dev2010/ali/"
+test_ali="exp/dnn_256-7-small_softmax-dbn_dnn/align_dev2010/"
 data="data/dev2010/"
 model="exp/model/final.mdl"
 
@@ -16,7 +17,8 @@ feats="ark,s,cs:apply-cmvn --norm-vars=true --utt2spk=ark:$data/utt2spk scp:$dat
 feats="$feats add-deltas ark:- ark:- 2> /dev/null |"
 feats="$feats splice-feats --left-context=3 --right-context=3 ark:- ark:- 2> /dev/null |"
 utt2spk=$data/utt2spk
-pdfs="ark:ali-to-pdf $model ark:'gunzip -c $ali/ali.*.gz |' ark,t:- |"
-output="exp/meta.h5"
+adapt_pdfs="ark:ali-to-pdf $model ark:'gunzip -c $adapt_ali/ali.*.gz |' ark,t:- |"
+test_pdfs="ark:ali-to-pdf $model ark:'gunzip -c $test_ali/ali.*.gz |' ark,t:- |"
+output="exp/meta_unsupervised.h5"
 
-python2.7 steps/train.py $keras_model "$feats" $utt2spk "$pdfs" "$pdfs" $output
+python2.7 steps/train.py $keras_model "$feats" $utt2spk "$adapt_pdfs" "$test_pdfs" $output
