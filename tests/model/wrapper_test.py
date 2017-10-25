@@ -46,6 +46,13 @@ class TestWrapper(unittest.TestCase):
     expected_weights = np.array([1., 1., 0., 0., 1., 0., 0., 1., 0., 0., 1., 1.])
     np.testing.assert_allclose(expected_weights, get_model_weights(model))
 
+  def testGetParamGroups(self):
+    model = self.build_model()
+    wrapper = create_model_wrapper(model)
+
+    expected_groups = [(0, 2), (2, 4), (4, 8), (8, 10), (10, 12)]
+    self.assertEqual(expected_groups, list(wrapper.param_groups()))
+
   def build_wrapped_model(self, model, batch_size):
     wrapper = create_model_wrapper(model)
 

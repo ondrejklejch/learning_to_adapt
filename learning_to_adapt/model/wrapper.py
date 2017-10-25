@@ -52,7 +52,7 @@ class ModelWrapper(Layer):
     params, x = inputs
 
     last_weight = 0
-    last_size = K.int_shape(x)[-1]
+    last_size = self.feat_dim
     for layer in self.layers:
       if layer[0] == "dense":
         weights = params[:, last_weight:last_weight + last_size * layer[1]]
@@ -80,6 +80,26 @@ class ModelWrapper(Layer):
         x = get_activation(layer[1])(x)
 
     return x
+
+  def param_groups(self):
+    last_weight = 0
+    last_size = self.feat_dim
+    for layer in self.layers:
+      if layer[0] == "dense":
+        yield (last_weight, last_weight + last_size * layer[1])
+        last_weight += last_size * layer[1]
+        last_size = layer[1]
+
+        if layer[2]:
+            yield (last_weight, last_weight + last_size)
+            last_weight += last_size
+      elif layer[0] == "feature_transform":
+        yield (last_weight, last_weight + last_size)
+        yield (last_weight + last_size, last_weight + 2 * last_size)
+        last_weight += 2 * last_size
+      elif layer[0] == "lhuc":
+        yield (last_weight, last_weight + last_size)
+        last_weight += last_size
 
   def compute_output_shape(self, input_shape):
     return input_shape[1][:-1] + (self.num_labels,)

@@ -37,58 +37,60 @@ class MetaLearner(Layer):
     super(MetaLearner, self).__init__(**kwargs)
 
     self.wrapper = wrapper
+    self.param_groups = list(wrapper.param_groups())
+    self.num_param_groups = len(self.param_groups)
     self.input_dim = 5
     self.units = units
     self.input_spec = [InputSpec(ndim=4), InputSpec(ndim=4), InputSpec(ndim=2)]
 
   def build(self, input_shapes):
     self.kernel = self.add_weight(
-        shape=(self.input_dim, self.units * 4),
+        shape=(self.num_param_groups, self.input_dim, self.units * 4),
         name='kernel',
         initializer='glorot_uniform',
     )
 
     self.recurrent_kernel = self.add_weight(
-        shape=(self.units, self.units * 4),
+        shape=(self.num_param_groups, self.units, self.units * 4),
         name='recurrent_kernel',
         initializer='orthogonal',
     )
 
     self.bias = self.add_weight(
-        shape=(self.units * 4,),
+        shape=(self.num_param_groups, self.units * 4),
         name='bias',
         initializer=self.bias_initializer,
     )
 
     self.W_f = self.add_weight(
-        shape=(self.units + 1, 1),
+        shape=(self.num_param_groups, self.units + 1, 1),
         name='W_f',
         initializer='glorot_uniform',
     )
 
     self.b_f = self.add_weight(
-        shape=(1,),
+        shape=(self.num_param_groups, 1),
         name='b_f',
         initializer='ones',
     )
 
     self.W_i = self.add_weight(
-        shape=(self.units + 1, 1),
+        shape=(self.num_param_groups, self.units + 1, 1),
         name='W_i',
         initializer='glorot_uniform',
     )
 
     self.b_i = self.add_weight(
-        shape=(1,),
+        shape=(self.num_param_groups, 1),
         name='b_i',
         initializer='zeros',
     )
 
   def bias_initializer(self, shape, *args, **kwargs):
     return K.concatenate([
-        Zeros()((self.units,), *args, **kwargs),
-        Ones()((self.units,), *args, **kwargs),
-        Zeros()((self.units * 2,), *args, **kwargs),
+        Zeros()((self.num_param_groups, self.units), *args, **kwargs),
+        Ones()((self.num_param_groups, self.units), *args, **kwargs),
+        Zeros()((self.num_param_groups, self.units * 2), *args, **kwargs),
     ])
 
   def call(self, inputs):
@@ -118,10 +120,27 @@ class MetaLearner(Layer):
     h_prev, c_prev, params, f_prev, i_prev = tuple(states)
 
     inputs, gradients = self.compute_inputs(params, feats, labels)
-    h, c = self.lstm_step(inputs, h_prev, c_prev)
-    new_params, f, i = self.update_params(params, gradients, h, f_prev, i_prev)
 
-    return [new_params], [h, c, new_params, f, i]
+    h = []
+    c = []
+    new_params = []
+    f = []
+    i = []
+    for param_group, indices in enumerate(self.param_groups):
+      s, e = indices
+      h_, c_ = self.lstm_step(inputs[s:e], h_prev[s:e], c_prev[s:e], param_group)
+      new_params_, f_, i_ = self.update_params(params[s:e], gradients[s:e], h_, f_prev[s:e], i_prev[s:e], param_group)
+
+      h.append(h_)
+      c.append(c_)
+      new_params.append(new_params_)
+      f.append(f_)
+      i.append(i_)
+
+    return self.concatenate_all([new_params]), self.concatenate_all([h, c, new_params, f, i])
+
+  def concatenate_all(self, xs):
+    return [K.concatenate(x, axis=0) for x in xs]
 
   def compute_inputs(self, params, feats, labels):
     predictions = self.wrapper([K.transpose(params), feats])
@@ -142,10 +161,10 @@ class MetaLearner(Layer):
 
     return inputs, gradients
 
-  def lstm_step(self, inputs, h, c):
-    z = K.dot(inputs, self.kernel)
-    z += K.dot(h, self.recurrent_kernel)
-    z = K.bias_add(z, self.bias)
+  def lstm_step(self, inputs, h, c, param_group):
+    z = K.dot(inputs, self.kernel[param_group])
+    z += K.dot(h, self.recurrent_kernel[param_group])
+    z = K.bias_add(z, self.bias[param_group])
 
     z0 = z[:, :self.units]
     z1 = z[:, self.units: 2 * self.units]
@@ -160,9 +179,9 @@ class MetaLearner(Layer):
     h = o * K.tanh(c)
     return h, c
 
-  def update_params(self, params, gradients, h, f, i):
-    f = K.relu(K.dot(K.concatenate([h, f], axis=1), self.W_f) + self.b_f)
-    i = K.relu(K.dot(K.concatenate([h, i], axis=1), self.W_i) + self.b_i)
+  def update_params(self, params, gradients, h, f, i, param_group):
+    f = K.relu(K.dot(K.concatenate([h, f], axis=1), self.W_f[param_group]) + self.b_f[param_group])
+    i = K.relu(K.dot(K.concatenate([h, i], axis=1), self.W_i[param_group]) + self.b_i[param_group])
     new_params = f * params - i * gradients
 
     return new_params, f, i
