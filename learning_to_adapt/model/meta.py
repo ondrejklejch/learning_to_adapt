@@ -3,7 +3,7 @@ from keras import losses
 from keras.engine import InputSpec
 from keras.engine.topology import Layer
 from keras.initializers import Ones, Zeros
-from keras.layers import Activation, Dense, Input, LSTM, Recurrent, deserialize
+from keras.layers import Input, GaussianNoise, deserialize
 from keras.models import Model
 
 from loop import rnn
@@ -20,9 +20,10 @@ def create_meta_learner(model, units=20):
   training_labels = Input(shape=(None, None, 1,))
   testing_feats = Input(shape=(None, feat_dim,))
   params = Input(shape=(num_params,))
+  params_with_noise = GaussianNoise(0.001)(params)
 
   meta_learner = MetaLearner(wrapper, units)
-  new_params = meta_learner([training_feats, training_labels, params])
+  new_params = meta_learner([training_feats, training_labels, params_with_noise])
   predictions = wrapper([new_params, testing_feats])
 
   return Model(

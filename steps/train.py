@@ -22,7 +22,7 @@ if __name__ == '__main__':
     model = load_model(model_path, custom_objects=custom_objects)
     model.compile(loss='sparse_categorical_crossentropy', optimizer='adam')
 
-    meta = create_meta_learner(model, units=64)
+    meta = create_meta_learner(model, units=20)
     meta.compile(
         loss=model.loss,
         optimizer=Adam(),
