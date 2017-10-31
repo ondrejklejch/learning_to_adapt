@@ -1,4 +1,5 @@
 import sys
+import numpy as np
 
 from keras.models import load_model
 from keras.optimizers import Adam
@@ -6,6 +7,17 @@ from keras.optimizers import Adam
 from learning_to_adapt.model import create_meta_learner, create_model_wrapper, get_model_weights, FeatureTransform, LHUC
 from learning_to_adapt.utils import load_data
 
+
+def compute_frame_accuracy(model, x, y):
+    predictions = []
+
+    for i in range(x.shape[0]):
+        predictions.append(np.argmax(model.predict(x[i]), axis=-1))
+
+    predictions = np.concatenate(predictions).flatten()
+    y = np.concatenate(y).flatten()
+
+    return np.mean(predictions == y)
 
 if __name__ == '__main__':
     model_path = sys.argv[1]
@@ -34,3 +46,5 @@ if __name__ == '__main__':
     x, y = load_data(params, feats, utt2spk, adapt_pdfs, test_pdfs, steps=1)
     meta.fit(x, y, epochs=5, batch_size=1, shuffle=True)
     meta.save(output_path)
+
+    print "Frame accuracy of the original model is: %.4f" % compute_frame_accuracy(model, x[-1], y)
