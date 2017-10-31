@@ -3,7 +3,7 @@ import kaldi_io
 import collections
 
 
-def load_data(params, feats, utt2spk, adapt_pdfs, test_pdfs, num_frames=1000, shift=500, steps=1):
+def load_data(params, feats, utt2spk, adapt_pdfs, test_pdfs, num_frames=1000, shift=500, batch_size=1000, epochs=1):
     utt_to_adapt_pdfs = load_utt_to_pdfs(adapt_pdfs)
     utt_to_test_pdfs = load_utt_to_pdfs(test_pdfs)
     utt_to_spk = load_utt_to_spk(utt2spk)
@@ -29,10 +29,10 @@ def load_data(params, feats, utt2spk, adapt_pdfs, test_pdfs, num_frames=1000, sh
         adapt_pdfs[spk].append(utt_adapt_pdfs)
         test_pdfs[spk].append(utt_test_pdfs)
 
-    return generate_batches(params, feats, adapt_pdfs, test_pdfs, num_frames, shift, steps)
+    return generate_batches(params, feats, adapt_pdfs, test_pdfs, num_frames, shift, batch_size, epochs)
 
 
-def generate_batches(params, feats, adapt_pdfs, test_pdfs, num_frames, shift, steps):
+def generate_batches(params, feats, adapt_pdfs, test_pdfs, num_frames, shift, batch_size, epochs):
     adapt_x = []
     adapt_y = []
     test_x = []
@@ -44,8 +44,20 @@ def generate_batches(params, feats, adapt_pdfs, test_pdfs, num_frames, shift, st
         spk_test_pdfs = np.concatenate(test_pdfs[spk])
 
         for offset in range(0, spk_feats.shape[0] - 2 * num_frames, shift):
-            adapt_x.append([spk_feats[offset:offset + num_frames]] * steps)
-            adapt_y.append([spk_adapt_pdfs[offset:offset + num_frames]] * steps)
+            current_adapt_x = []
+            current_adapt_y = []
+
+            for _ in range(epochs):
+                permutation = np.random.permutation(num_frames)
+                x = spk_feats[offset:offset + num_frames][permutation]
+                y = spk_adapt_pdfs[offset:offset + num_frames][permutation]
+
+                for i in range(0, num_frames, batch_size):
+                    current_adapt_x.append(x[i:i + batch_size])
+                    current_adapt_y.append(y[i:i + batch_size])
+
+            adapt_x.append(np.array(current_adapt_x))
+            adapt_y.append(np.array(current_adapt_y))
             test_x.append(spk_feats[offset + num_frames:offset + 2 * num_frames])
             test_y.append(spk_test_pdfs[offset + num_frames:offset + 2 * num_frames])
 
