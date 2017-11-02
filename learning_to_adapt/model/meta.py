@@ -163,7 +163,7 @@ class MetaLearner(Layer):
 
   def compute_inputs(self, params, feats, labels):
     predictions = self.wrapper([K.transpose(params), feats])
-    loss = K.sum(losses.get(self.wrapper.loss)(labels, predictions))
+    loss = K.mean(losses.get(self.wrapper.loss)(labels, predictions))
     gradients = K.stop_gradient(K.squeeze(K.gradients(loss, [params]), 0))
 
     loss = loss * K.ones_like(params)
