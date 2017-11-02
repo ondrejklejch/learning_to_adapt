@@ -8,16 +8,20 @@ from learning_to_adapt.model import create_meta_learner, create_model_wrapper, g
 from learning_to_adapt.utils import load_data
 
 
-def compute_frame_accuracy(model, x, y):
+def compute_frame_accuracy(model, generator, num_batches):
     predictions = []
+    labels = []
 
-    for i in range(x.shape[0]):
-        predictions.append(np.argmax(model.predict(x[i]), axis=-1))
+    for i in range(num_batches):
+        x, y = next(generator)
+
+        predictions.append(np.argmax(model.predict(x[-1][0]), axis=-1))
+        labels.append(y)
 
     predictions = np.concatenate(predictions).flatten()
-    y = np.concatenate(y).flatten()
+    labels = np.concatenate(labels).flatten()
 
-    return np.mean(predictions == y)
+    return np.mean(predictions == labels)
 
 if __name__ == '__main__':
     model_path = sys.argv[1]
@@ -43,8 +47,8 @@ if __name__ == '__main__':
     meta.summary()
 
     params = get_model_weights(model)
-    x, y = load_data(params, feats, utt2spk, adapt_pdfs, test_pdfs, steps=1)
-    meta.fit(x, y, epochs=5, batch_size=1, shuffle=True)
+    num_batches, generator = load_data(params, feats, utt2spk, adapt_pdfs, test_pdfs, epochs=1)
+    meta.fit_generator(generator, steps_per_epoch=num_batches, epochs=20)
     meta.save(output_path)
 
-    print "Frame accuracy of the original model is: %.4f" % compute_frame_accuracy(model, x[-1], y)
+    print "Frame accuracy of the original model is: %.4f" % compute_frame_accuracy(model, generator, num_batches)
