@@ -23,6 +23,21 @@ def compute_frame_accuracy(model, generator, num_batches):
 
     return np.mean(predictions == labels)
 
+def compute_adapted_frame_accuracy(meta, generator, num_batches):
+    predictions = []
+    labels = []
+
+    for i in range(num_batches):
+        x, y = next(generator)
+
+        predictions.append(np.argmax(meta.predict(x), axis=-1))
+        labels.append(y)
+
+    predictions = np.concatenate(predictions).flatten()
+    labels = np.concatenate(labels).flatten()
+
+    return np.mean(predictions == labels)
+
 if __name__ == '__main__':
     model_path = sys.argv[1]
     feats = sys.argv[2]
@@ -52,3 +67,4 @@ if __name__ == '__main__':
     meta.save(output_path)
 
     print "Frame accuracy of the original model is: %.4f" % compute_frame_accuracy(model, generator, num_batches)
+    print "Frame accuracy of the adapted model is: %.4f" % compute_adapted_frame_accuracy(meta, generator, num_batches)
