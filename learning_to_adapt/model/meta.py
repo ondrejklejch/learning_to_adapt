@@ -13,7 +13,7 @@ from wrapper import ModelWrapper, create_model_wrapper
 def create_meta_learner(model, units=20):
   wrapper = create_model_wrapper(model)
   feat_dim = wrapper.feat_dim
-  num_params = wrapper.num_params
+  num_params = wrapper.num_trainable_params
 
   training_feats = Input(shape=(None, None, feat_dim,))
   training_labels = Input(shape=(None, None, 1,))
@@ -35,7 +35,7 @@ def load_meta_learner(model, path):
   model.compile(loss='sparse_categorical_crossentropy', optimizer='sgd')
   wrapper = create_model_wrapper(model)
   feat_dim = wrapper.feat_dim
-  num_params = wrapper.num_params
+  num_params = wrapper.num_trainable_params
 
   custom_objects={'MetaLearner': MetaLearner, 'ModelWrapper': ModelWrapper}
   meta_learner = load_model(path, custom_objects=custom_objects).get_layer('meta_learner_1')
@@ -120,15 +120,15 @@ class MetaLearner(Layer):
       initial_states=self.get_initital_state(params),
     )
 
-    return K.reshape(last_output[0], (1, self.wrapper.num_params))
+    return K.reshape(last_output[0], (1, self.wrapper.num_trainable_params))
 
   def get_initital_state(self, params):
     return  [
-        K.zeros((self.wrapper.num_params, self.units)),
-        K.zeros((self.wrapper.num_params, self.units)),
-        K.reshape(params, (self.wrapper.num_params, 1)),
-        K.zeros((self.wrapper.num_params, 1)),
-        K.zeros((self.wrapper.num_params, 1)),
+        K.zeros((self.wrapper.num_trainable_params, self.units)),
+        K.zeros((self.wrapper.num_trainable_params, self.units)),
+        K.reshape(params, (self.wrapper.num_trainable_params, 1)),
+        K.zeros((self.wrapper.num_trainable_params, 1)),
+        K.zeros((self.wrapper.num_trainable_params, 1)),
     ]
 
   def compute_output_shape(self, input_shape):

@@ -38,19 +38,32 @@ def compute_adapted_frame_accuracy(meta, generator, num_batches):
 
     return np.mean(predictions == labels)
 
+
+def load_acoustic_model(path, adaptation_type="ALL"):
+    custom_objects = {
+        'FeatureTransform': FeatureTransform,
+        'LHUC': LHUC
+    }
+
+    model = load_model(model_path, custom_objects=custom_objects)
+
+    if adaptation_type == "LHUC":
+        for l in model.layers:
+            l.trainable = l.name.startswith("lhuc")
+
+    return model
+
+
 if __name__ == '__main__':
     model_path = sys.argv[1]
     feats = sys.argv[2]
     utt2spk = sys.argv[3]
     adapt_pdfs = sys.argv[4]
     test_pdfs = sys.argv[5]
-    output_path = sys.argv[6]
+    adaptation_type = sys.argv[6]
+    output_path = sys.argv[7]
 
-    custom_objects = {
-        'FeatureTransform': FeatureTransform,
-        'LHUC': LHUC
-    }
-    model = load_model(model_path, custom_objects=custom_objects)
+    model = load_acoustic_model(model_path, adaptation_type)
     model.compile(loss='sparse_categorical_crossentropy', optimizer='adam')
 
     meta = create_meta_learner(model, units=20)
@@ -61,7 +74,7 @@ if __name__ == '__main__':
     )
     meta.summary()
 
-    params = get_model_weights(model)
+    params = get_model_weights(model, trainable_only=True)
     num_batches, generator = load_data(params, feats, utt2spk, adapt_pdfs, test_pdfs, epochs=1)
     meta.fit_generator(generator, steps_per_epoch=num_batches, epochs=20)
     meta.save(output_path)
