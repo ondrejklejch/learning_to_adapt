@@ -3,16 +3,26 @@ from keras.models import Sequential
 import numpy as np
 import unittest
 
-from learning_to_adapt.model.meta import create_meta_learner
+from learning_to_adapt.model import create_meta_learner, create_model_wrapper
 
 
 class TestLoop(unittest.TestCase):
+
+  def testMetaLearnerCanPredict(self):
+    model = self.create_model()
+    wrapper = create_model_wrapper(model, sparse=True, num_sparse_params=4)
+    meta = create_meta_learner(wrapper)
+    meta.compile(loss=model.loss, optimizer='adam')
+
+    batch = next(self.generator())
+    self.assertEquals((1, 2, 1), meta.predict(batch[0]).shape)
 
   def testMetaLearnerCanOverfit(self):
     np.random.seed(0)
 
     model = self.create_model()
-    meta = create_meta_learner(model)
+    wrapper = create_model_wrapper(model)
+    meta = create_meta_learner(wrapper)
     meta.compile(loss=model.loss, optimizer='adam')
 
     generator = self.generator()
@@ -24,13 +34,14 @@ class TestLoop(unittest.TestCase):
 
   def create_model(self):
     model = Sequential()
-    model.add(Dense(1, use_bias=True, input_shape=(1,)))
+    model.add(Dense(2, use_bias=True, input_shape=(1,), trainable=False))
+    model.add(Dense(1, use_bias=True))
     model.compile(loss='mse', optimizer='adam')
     return model
 
   def generator(self):
     while True:
-      params = np.array([[1.0, 0.0]])
+      params = np.array([[1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]])
       training_feats = np.array([[[[1.], [0.]]] * 5])
       training_labels = np.array([[[[1.], [0.]]] * 5])
       testing_feats = np.array([[[1.], [0.]]])

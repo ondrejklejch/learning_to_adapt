@@ -66,7 +66,8 @@ if __name__ == '__main__':
     model = load_acoustic_model(model_path, adaptation_type)
     model.compile(loss='sparse_categorical_crossentropy', optimizer='adam')
 
-    meta = create_meta_learner(model, units=20)
+    wrapper = create_model_wrapper(model)
+    meta = create_meta_learner(wrapper, units=20)
     meta.compile(
         loss=model.loss,
         optimizer=Adam(),
@@ -74,7 +75,7 @@ if __name__ == '__main__':
     )
     meta.summary()
 
-    params = get_model_weights(model, trainable_only=True)
+    params = get_model_weights(model)
     num_batches, generator = load_data(params, feats, utt2spk, adapt_pdfs, test_pdfs, epochs=1)
     meta.fit_generator(generator, steps_per_epoch=num_batches, epochs=20)
     meta.save(output_path)

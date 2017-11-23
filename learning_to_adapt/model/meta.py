@@ -10,19 +10,17 @@ from loop import rnn
 from wrapper import ModelWrapper, create_model_wrapper
 
 
-def create_meta_learner(model, units=20):
-  wrapper = create_model_wrapper(model)
+def create_meta_learner(wrapper, units=20):
   feat_dim = wrapper.feat_dim
-  num_params = wrapper.num_trainable_params
+  num_params = wrapper.num_params
 
   training_feats = Input(shape=(None, None, feat_dim,))
   training_labels = Input(shape=(None, None, 1,))
   testing_feats = Input(shape=(None, feat_dim,))
   params = Input(shape=(num_params,))
-  params_with_noise = GaussianNoise(0.001)(params)
 
   meta_learner = MetaLearner(wrapper, units)
-  new_params = meta_learner([training_feats, training_labels, params_with_noise])
+  new_params = meta_learner([training_feats, training_labels, params])
   predictions = wrapper([new_params, testing_feats])
 
   return Model(
@@ -32,6 +30,7 @@ def create_meta_learner(model, units=20):
 
 
 def load_meta_learner(model, path):
+  # TODO: Rewrite!
   model.compile(loss='sparse_categorical_crossentropy', optimizer='sgd')
   wrapper = create_model_wrapper(model)
   feat_dim = wrapper.feat_dim
@@ -114,13 +113,18 @@ class MetaLearner(Layer):
 
   def call(self, inputs):
     feats, labels, params = inputs
+
+    self.params = params
+    trainable_params = self.wrapper.get_trainable_params(params)
+
     last_output, _, _ = rnn(
       step_function=self.step,
       inputs=[feats, labels],
-      initial_states=self.get_initital_state(params),
+      initial_states=self.get_initital_state(trainable_params),
     )
 
-    return K.reshape(last_output[0], (1, self.wrapper.num_trainable_params))
+    new_params = K.reshape(last_output[0], (1, self.wrapper.num_trainable_params))
+    return self.wrapper.merge_params(self.params, new_params)
 
   def get_initital_state(self, params):
     return  [
@@ -161,17 +165,17 @@ class MetaLearner(Layer):
   def concatenate_all(self, xs):
     return [K.concatenate(x, axis=0) for x in xs]
 
-  def compute_inputs(self, params, feats, labels):
-    predictions = self.wrapper([K.transpose(params), feats])
+  def compute_inputs(self, trainable_params, feats, labels):
+    predictions = self.wrapper([self.params, K.transpose(trainable_params), feats])
     loss = K.mean(losses.get(self.wrapper.loss)(labels, predictions))
-    gradients = K.stop_gradient(K.squeeze(K.gradients(loss, [params]), 0))
+    gradients = K.stop_gradient(K.squeeze(K.gradients(loss, [trainable_params]), 0))
 
-    loss = loss * K.ones_like(params)
+    loss = loss * K.ones_like(trainable_params)
     preprocessed_gradients = self.preprocess(gradients)
     preprocessed_loss = self.preprocess(loss)
 
     inputs = K.stop_gradient(K.concatenate([
-      params,
+      trainable_params,
       preprocessed_gradients[0],
       preprocessed_gradients[1],
       preprocessed_loss[0],
