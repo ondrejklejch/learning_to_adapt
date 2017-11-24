@@ -38,11 +38,19 @@ keras.backend.tensorflow_backend.set_session(tf.Session(config=config))
 def adapt(model, method, config, x, y):
     config = load_config(config)
 
+    if method == "ALL":
+        adapt_all(model, config, x, y)
+
     if method == "LHUC":
         adapt_lhuc(model, config, x, y)
 
     if method == "META":
         adapt_meta(model, config, x, y)
+
+
+def adapt_all(model, config, x, y):
+    model.compile(loss='sparse_categorical_crossentropy', optimizer=keras.optimizers.SGD(lr=config["lr"]))
+    model.fit(x, y, epochs=config["epochs"], verbose=0)
 
 
 def adapt_lhuc(model, config, x, y):
@@ -54,12 +62,11 @@ def adapt_lhuc(model, config, x, y):
 
 
 def adapt_meta(model, config, x, y):
-    meta = load_meta_learner(model, config["model"])
-
     params = get_model_weights(model).reshape((1, -1))
-    x = x.reshape((1, 1) + x.shape)
-    y = y.reshape((1, 1) + y.shape)
+    x = x.reshape((1, 1, -1, x.shape[-1]))
+    y = y.reshape((1, 1, -1, y.shape[-1]))
 
+    meta = load_meta_learner(model, config["model"])
     new_params = meta.predict([params, x, y])
     set_model_weights(model, new_params[0])
 

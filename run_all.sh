@@ -4,13 +4,13 @@
 . path.sh
 
 nj=4
-dir=exp/lhuc_256_unsupervised
+dir=exp/all_256_supervised_10s
 configs=$dir/configs
 mkdir -p $configs
 rm -rf $configs/*
-for lr in 0.4 0.5 0.6; do
+for lr in 0.001 0.01 0.1 0.2; do
     for epochs in 1 3 5; do
-        name="lhuc_${lr}_${epochs}"
+        name="all_${lr}_${epochs}"
         echo "{\"lr\": $lr, \"epochs\": $epochs}" > $configs/$name.json
         echo -e "${name}\t${configs}/${name}.json" >> $configs/experiments.scp
     done
@@ -21,12 +21,12 @@ for job in `seq 1 $nj`; do
     utils/split_scp.pl -j $nj $((job-1)) $configs/experiments.scp $configs/split${nj}/$job.scp
 done
 
-#for dataset in dev2010 tst2010 tst2011; do
-for dataset in tst2011; do
+for dataset in dev2010 tst2010 tst2011; do
     data=data/${dataset}
     pdfs=exp/dnn_256-7-small_softmax-dbn_dnn/decode_${dataset}/ali/
+    pdfs="exp/dnn_256-7-small_softmax-dbn_dnn/align_${dataset}/"
     frames=1000
-    model=exp/model_with_lhuc/
+    model=exp/model/
     graph=exp/model/graph_TED-312MW.3gm.p07/
     decode_dir=$dir/decode_${dataset}
 
@@ -45,7 +45,7 @@ for dataset in tst2011; do
 
     echo "Decoding ${dataset}: $decode_dir"
     $cmd JOB=1:$nj $decode_dir/log/experiments.JOB.log \
-        steps/run_experiments.sh LHUC $configs/split${nj}/JOB.scp $data $pdfs $frames $model $graph $decode_dir
+        steps/run_experiments.sh ALL $configs/split${nj}/JOB.scp $data $pdfs $frames $model $graph $decode_dir
 
     ln -s `pwd`/$model/final.mdl $decode_dir/final.mdl
     for experiment in `ls -1 $decode_dir | grep -v log | grep -v final.mdl`; do
