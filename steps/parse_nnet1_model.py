@@ -51,18 +51,14 @@ def parse_component(line, line_buffer, with_lhuc_layers):
 
     parse_end_of_component(f)
 
-    if with_lhuc_layers:
-      return [
-        Dense(output_dim, input_shape=(input_dim,), weights=[kernel.T, bias], trainable=True),
-        LHUC()
-      ]
-    else:
-      return [
-        Dense(output_dim, input_shape=(input_dim,), weights=[kernel.T, bias], trainable=True),
-      ]
+    return [Dense(output_dim, input_shape=(input_dim,), weights=[kernel.T, bias], trainable=True)]
   elif line.startswith("<Sigmoid>"):
     parse_end_of_component(f)
-    return [Activation("sigmoid")]
+
+    if with_lhuc_layers:
+      return [Activation("sigmoid"), LHUC()]
+    else:
+      return [Activation("sigmoid")]
   elif line.startswith("<Softmax>"):
     parse_end_of_component(f)
     return [Activation("softmax")]
@@ -125,12 +121,6 @@ if __name__ == "__main__":
 
   with open(model, "r") as f:
     components.extend(parse_nnet1(f, with_lhuc_layers=True))
-
-  # Remove LHUC layer after softmax layer
-  for component in reversed(components):
-    if component.name.startswith("lhuc"):
-      components.remove(component)
-      break
 
   model = Sequential()
   for component in components:
