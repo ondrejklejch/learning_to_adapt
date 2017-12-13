@@ -50,7 +50,7 @@ def adapt(model, method, config, x, y):
 
 def adapt_all(model, config, x, y):
     model.compile(loss='sparse_categorical_crossentropy', optimizer=keras.optimizers.SGD(lr=config["lr"]))
-    model.fit(x, y, epochs=config["epochs"], verbose=0)
+    model.fit(x, y, batch_size=256, epochs=config["epochs"], verbose=0)
 
 
 def adapt_lhuc(model, config, x, y):
@@ -58,7 +58,7 @@ def adapt_lhuc(model, config, x, y):
         l.trainable = l.name.startswith('lhuc')
 
     model.compile(loss='sparse_categorical_crossentropy', optimizer=keras.optimizers.SGD(lr=config["lr"]))
-    model.fit(x, y, epochs=config["epochs"], verbose=0)
+    model.fit(x, y, batch_size=256, epochs=config["epochs"], verbose=0)
 
 
 def adapt_meta(model, config, x, y):
