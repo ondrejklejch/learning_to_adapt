@@ -30,23 +30,13 @@ def create_meta_learner(wrapper, units=20):
 
 
 def load_meta_learner(model, path):
-  # TODO: Rewrite!
-  model.compile(loss='sparse_categorical_crossentropy', optimizer='sgd')
-  wrapper = create_model_wrapper(model)
-  feat_dim = wrapper.feat_dim
-  num_params = wrapper.num_trainable_params
-
   custom_objects={'MetaLearner': MetaLearner, 'ModelWrapper': ModelWrapper}
-  meta_learner = load_model(path, custom_objects=custom_objects).get_layer('meta_learner_1')
+  model = load_model(path, custom_objects=custom_objects)
 
-  training_feats = Input(shape=(None, None, feat_dim,))
-  training_labels = Input(shape=(None, None, 1,))
-  params = Input(shape=(num_params,))
+  inputs = model.inputs[:3]
+  outputs = [model.get_layer('meta_learner_1').output]
 
-  meta_learner = MetaLearner(wrapper, meta_learner.units, weights=meta_learner.get_weights())
-  new_params = meta_learner([training_feats, training_labels, params])
-
-  return Model(inputs=[params, training_feats, training_labels], outputs=[new_params])
+  return Model(inputs=inputs, outputs=outputs)
 
 
 class MetaLearner(Layer):
