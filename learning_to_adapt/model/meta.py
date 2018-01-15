@@ -2,7 +2,7 @@ from keras import backend as K
 from keras import losses
 from keras.engine import InputSpec
 from keras.engine.topology import Layer
-from keras.initializers import Ones, Zeros
+from keras.initializers import Ones, Zeros, Constant
 from keras.layers import Input, GaussianNoise, deserialize
 from keras.models import Model, load_model
 
@@ -10,7 +10,7 @@ from loop import rnn
 from wrapper import ModelWrapper, create_model_wrapper
 
 
-def create_meta_learner(wrapper, units=20):
+def create_meta_learner(wrapper, units=20, meta_learner_type='full'):
   feat_dim = wrapper.feat_dim
   num_params = wrapper.num_params
 
@@ -19,7 +19,13 @@ def create_meta_learner(wrapper, units=20):
   testing_feats = Input(shape=(None, feat_dim,))
   params = Input(shape=(num_params,))
 
-  meta_learner = MetaLearner(wrapper, units)
+  if meta_learner_type == 'lr_per_parameter':
+    meta_learner = LearningRatePerParameterMetaLearner(wrapper)
+  elif meta_learner_type == 'full':
+    meta_learner = MetaLearner(wrapper, units)
+  else:
+    raise ValueError('Undefined meta learner type: %s' % meta_learner_type)
+
   new_params = meta_learner([training_feats, training_labels, params])
   predictions = wrapper([new_params, testing_feats])
 
@@ -227,3 +233,67 @@ class MetaLearner(Layer):
     wrapper = deserialize(config.pop('wrapper'), custom_objects=custom_objects)
 
     return cls(wrapper, units)
+
+
+class LearningRatePerParameterMetaLearner(Layer):
+
+  def __init__(self, wrapper, **kwargs):
+    super(LearningRatePerParameterMetaLearner, self).__init__(**kwargs)
+
+    self.wrapper = wrapper
+    self.num_trainable_params = self.wrapper.num_trainable_params
+
+  def build(self, input_shapes):
+    self.learning_rate = self.add_weight(
+      shape=(self.num_trainable_params, 1),
+      name='learning_rate',
+      initializer='zeros'
+    )
+
+  def call(self, inputs):
+    feats, labels, params = inputs
+
+    self.params = params
+    trainable_params = self.wrapper.get_trainable_params(params)
+
+    last_output, _, _ = rnn(
+      step_function=self.step,
+      inputs=[feats, labels],
+      initial_states=self.get_initital_state(trainable_params),
+    )
+
+    new_params = K.reshape(last_output[0], (1, self.wrapper.num_trainable_params))
+    return self.wrapper.merge_params(self.params, new_params)
+
+  def get_initital_state(self, params):
+    return  [K.reshape(params, (self.num_trainable_params, 1))]
+
+  def compute_output_shape(self, input_shape):
+    return input_shape[2]
+
+  def step(self, inputs, states):
+    feats, labels = inputs
+    params = states[0]
+    gradients = self.compute_gradients(params, feats, labels)
+    new_params = params - K.exp(self.learning_rate) * gradients
+
+    return [new_params], [new_params]
+
+  def compute_gradients(self, trainable_params, feats, labels):
+    predictions = self.wrapper([self.params, K.transpose(trainable_params), feats])
+    loss = K.mean(losses.get(self.wrapper.loss)(labels, predictions))
+    return K.stop_gradient(K.squeeze(K.gradients(loss, [trainable_params]), 0))
+
+  def get_config(self):
+    return {
+      'wrapper': {
+        'class_name': self.wrapper.__class__.__name__,
+        'config': self.wrapper.get_config()
+      }
+    }
+
+  @classmethod
+  def from_config(cls, config, custom_objects=None):
+    wrapper = deserialize(config.pop('wrapper'), custom_objects=custom_objects)
+
+    return cls(wrapper)
