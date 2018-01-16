@@ -66,6 +66,10 @@ def adapt_meta(model, config, x, y):
     x = x.reshape((1, 1, -1, x.shape[-1]))
     y = y.reshape((1, 1, -1, y.shape[-1]))
 
+    epochs = config.get("epochs", 1)
+    x = np.repeat(x, epochs, axis=1)
+    y = np.repeat(y, epochs, axis=1)
+
     meta = load_meta_learner(model, config["model"])
     new_params = meta.predict([params, x, y])
     set_model_weights(model, new_params[0])

@@ -36,11 +36,15 @@ def create_meta_learner(wrapper, units=20, meta_learner_type='full'):
 
 
 def load_meta_learner(model, path):
-  custom_objects={'MetaLearner': MetaLearner, 'ModelWrapper': ModelWrapper}
-  model = load_model(path, custom_objects=custom_objects)
+  custom_objects={
+    'MetaLearner': MetaLearner,
+    'ModelWrapper': ModelWrapper,
+    'LearningRatePerParameterMetaLearner': LearningRatePerParameterMetaLearner
+  }
 
+  model = load_model(path, custom_objects=custom_objects)
   inputs = model.inputs[:3]
-  outputs = [model.get_layer('meta_learner_1').output]
+  outputs = [model.layers[-3].output]
 
   return Model(inputs=inputs, outputs=outputs)
 

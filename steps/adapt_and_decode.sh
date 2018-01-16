@@ -30,7 +30,7 @@ sdata=$data/spks_split
 adaptation_pdfs="ark:$decode_dir/pdfs"
 feats="ark,s,cs:apply-cmvn --norm-vars=true --utt2spk=ark:$sdata/JOB/utt2spk scp:$sdata/JOB/cmvn.scp scp:$sdata/JOB/feats.scp ark:- |"
 $add_deltas && feats="$feats add-deltas ark:- ark:- |"
-$splice_feats && feats="$feats splice-feats --left-context=3 --right-context=3 ark:- ark:- |"
+$splice_feats && feats="$feats splice-feats --left-context=5 --right-context=5 ark:- ark:- |"
 feats="$feats python steps/adapt_and_decode.py $method $config $adaptation_pdfs $adaptation_frames $model_dir/dnn.nnet.h5 $model_dir/dnn.priors.csv |"
 feats="$feats grep -v 'import dot_parser' |"
 
