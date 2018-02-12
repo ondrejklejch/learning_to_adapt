@@ -2,7 +2,8 @@ import re
 import sys
 import numpy as np
 from keras.models import Sequential
-from keras.layers import Conv1D, Activation
+from keras.layers import Conv1D, Activation, TimeDistributed
+from learning_to_adapt.model.layers import LHUC
 
 
 def parse_nnet3(path):
@@ -153,7 +154,7 @@ def parse_components(f):
     return components
 
 
-def create_model(definition, components, subsampling_factor):
+def create_model(definition, components, subsampling_factor, with_lhuc_layers):
     graph = []
     node_name = "output"
     while node_name:
@@ -179,6 +180,9 @@ def create_model(definition, components, subsampling_factor):
             size = int(definition["dim"])
         elif definition["type"] == "activation":
             model.add(Activation(definition["activation"], name=node_name))
+
+            if definition["activation"] not in ["linear", "softmax"] and with_lhuc_layers:
+                model.add(TimeDistributed(LHUC(name="lhuc.%s" % node_name)))
         elif definition["type"] == "affine":
             weights = components[definition["name"]]
             filters = weights[1].shape[0]
@@ -207,12 +211,13 @@ def create_model(definition, components, subsampling_factor):
 if __name__ == "__main__":
     workdir = sys.argv[1]
     subsampling_factor = int(sys.argv[2])
+    with_lhuc_layers = sys.argv[3] == "true"
 
     input_path = "%s/final.txt" % workdir
     output_path = "%s/dnn.nnet.h5" % workdir
 
     definition, components = parse_nnet3(input_path)
-    model, left_context, right_context = create_model(definition, components, subsampling_factor)
+    model, left_context, right_context = create_model(definition, components, subsampling_factor, with_lhuc_layers)
 
     model.summary()
     model.save(output_path)
