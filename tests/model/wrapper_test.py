@@ -1,5 +1,6 @@
 from keras.models import Model, Sequential, load_model
 from keras.layers import Activation, Dense, Input
+import keras.backend as K
 import numpy as np
 import unittest
 
@@ -12,7 +13,7 @@ class TestWrapper(unittest.TestCase):
   def testForwardPass(self):
     batch_size = 10
     model = self.build_model()
-    wrapper = self.build_wrapped_model(model, batch_size)
+    wrapper = self.build_wrapped_model(model)
 
     params = np.array([
       [1., 1., 0., 0., 1., 0., 0., 1., -1., -1., 1., 1.],
@@ -46,7 +47,7 @@ class TestWrapper(unittest.TestCase):
       l.trainable = l.name.startswith("dense")
 
     batch_size = 10
-    wrapper = self.build_wrapped_model(model, batch_size)
+    wrapper = self.build_wrapped_model(model)
 
     x = np.array([
       [[1., 2.]] * batch_size,
@@ -86,7 +87,7 @@ class TestWrapper(unittest.TestCase):
 
   def testCanSerializeSparseModelWrapper(self):
     model = self.build_model()
-    wrapper = self.build_wrapped_model(model, batch_size=2, sparse=True)
+    wrapper = self.build_wrapped_model(model, sparse=True)
     original_weights = wrapper.get_weights()
 
     model_path = "/tmp/sparse_wrapper.h5"
@@ -103,7 +104,7 @@ class TestWrapper(unittest.TestCase):
     set_model_weights(model, params[0])
 
     batch_size = 10
-    wrapper = self.build_wrapped_model(model, batch_size=batch_size, sparse=True)
+    wrapper = self.build_wrapped_model(model, sparse=True)
     wrapper.set_weights([np.array([0, 2, 4, 5, 8, 10])])
 
     x = np.array([
@@ -118,7 +119,7 @@ class TestWrapper(unittest.TestCase):
     prediction = wrapper.predict([params, trainable_params, x])
     np.testing.assert_allclose(expected_result, prediction)
 
-  def build_wrapped_model(self, model, batch_size, sparse=False):
+  def build_wrapped_model(self, model, sparse=False):
     if sparse:
       wrapper = create_model_wrapper(model, sparse=True, num_sparse_params=6)
     else:
@@ -126,7 +127,7 @@ class TestWrapper(unittest.TestCase):
 
     params = Input(shape=(wrapper.num_params,))
     trainable_params = Input(shape=(wrapper.num_trainable_params,))
-    x = Input(shape=(batch_size, 2,))
+    x = Input(shape=K.int_shape(model.inputs[0]))
     y = wrapper([params, trainable_params, x])
 
     return Model(inputs=[params, trainable_params, x], outputs=[y])

@@ -16,18 +16,40 @@ def create_model_wrapper(model, sparse=False, num_sparse_params=10000):
   loss = model.loss
 
   layers = []
-  last_size = 0
   for layer in model.layers:
     if isinstance(layer, Dense):
-      layers.append(("dense", layer.units, layer.use_bias, layer.activation.__name__, layer.trainable))
-      last_size = layer.units
-    if isinstance(layer, FeatureTransform):
-      layers.append(("feature_transform", feat_dim, layer.trainable))
-      last_size = feat_dim
-    if isinstance(layer, LHUC):
-      layers.append(("lhuc", last_size, layer.trainable))
+      layers.append({
+        "type": "dense",
+        "units": layer.units,
+        "use_bias": layer.use_bias,
+        "activation": layer.activation.__name__,
+        "trainable": layer.trainable,
+        "num_params": count_params(layer),
+        "weights_shapes": [w.shape for w in layer.get_weights()],
+      })
+    elif isinstance(layer, FeatureTransform):
+      layers.append({
+        "type": "feature_transform",
+        "feat_dim": feat_dim,
+        "trainable": layer.trainable,
+        "num_params": count_params(layer),
+        "weights_shapes": [w.shape for w in layer.get_weights()],
+      })
+    elif isinstance(layer, LHUC):
+      layers.append({
+        "type": "lhuc",
+        "trainable": layer.trainable,
+        "num_params": count_params(layer),
+        "weights_shapes": [w.shape for w in layer.get_weights()],
+      })
     elif isinstance(layer, Activation):
-      layers.append(("activation", layer.activation.__name__, layer.trainable))
+      layers.append({
+        "type": "activation",
+        "activation": layer.activation.__name__,
+        "trainable": layer.trainable,
+        "num_params": count_params(layer),
+        "weights_shapes": [w.shape for w in layer.get_weights()],
+      })
 
   if not sparse:
     return ModelWrapper(
@@ -44,6 +66,27 @@ def create_model_wrapper(model, sparse=False, num_sparse_params=10000):
       num_params=num_params,
       loss=loss,
       layers=layers)
+
+def count_params(layer):
+  return sum([w.flatten().shape[0] for w in layer.get_weights()])
+
+def reshape_params(shapes, params):
+  reshaped_params = []
+  offset = 0
+
+  for shape in shapes:
+    size = np.prod(shape)
+    new_params = params[:, offset:offset + size]
+
+    if len(shape) == 1:
+        new_params = K.expand_dims(new_params, 1)
+    else:
+        new_params = K.reshape(new_params, (-1,) + tuple(shape))
+
+    reshaped_params.append(new_params)
+    offset += size
+
+  return reshaped_params
 
 def get_model_weights(model):
   weights = []
@@ -63,6 +106,7 @@ def set_model_weights(model, weights):
 
     l.set_weights(layer_weights)
 
+
 class ModelWrapper(Layer):
   """
   This wrapper allows to use DNN's parameters as inputs to the model,
@@ -81,38 +125,19 @@ class ModelWrapper(Layer):
     self.layers = layers
 
   def count_trainable_params(self, layers):
-    num_trainable_params = 0
-    last_size = self.feat_dim
-
-    for layer in layers:
-      if layer[0] == "dense":
-        num_trainable_params += layer[-1] * (last_size * layer[1] + layer[1] * layer[2])
-        last_size = layer[1]
-      elif layer[0] == "feature_transform":
-        num_trainable_params += layer[-1] * 2 * last_size
-      elif layer[0] == "lhuc":
-        num_trainable_params += layer[-1] * last_size
-
-    return num_trainable_params
+    return sum([l["num_params"] * l["trainable"] for l in layers])
 
   def get_trainable_params(self, params):
     trainable_params = []
 
-    self.init()
+    offset = 0
     for layer in self.layers:
-      if layer[0] == "dense":
-        input_dim = self.last_size
-        trainable_params.append((layer[-1], self.get_params_for_layer(params, size=layer[1])))
+      if layer["trainable"]:
+        trainable_params.append(params[:, offset:offset + layer["num_params"]])
 
-        if layer[2]:
-          trainable_params.append((layer[-1], self.get_params_for_layer(params)))
-      elif layer[0] == "feature_transform":
-        trainable_params.append((layer[-1], self.get_params_for_layer(params)))
-        trainable_params.append((layer[-1], self.get_params_for_layer(params)))
-      elif layer[0] == "lhuc":
-        trainable_params.append((layer[-1], self.get_params_for_layer(params)))
+      offset += layer["num_params"]
 
-    return K.concatenate([params for (trainable, params) in trainable_params if trainable])
+    return K.concatenate(trainable_params)
 
   def call(self, inputs):
     if len(inputs) == 3:
@@ -123,91 +148,61 @@ class ModelWrapper(Layer):
     else:
         raise ValueError("Wrong number of inputs")
 
-    self.init()
+    offset = 0
     for layer in self.layers:
-      if layer[0] == "dense":
-        input_dim = self.last_size
-        weights = self.get_params_for_layer(params, layer[1])
-        weights = K.reshape(weights, (-1, input_dim, layer[1]))
-        x = K.batch_dot(x, weights, axes=[2, 1])
+      weights = params[:, offset:offset + layer["num_params"]]
+      offset += layer["num_params"]
+      x = self.evaluate_layer(layer, weights, x)
 
-        if layer[2]:
-          bias = K.expand_dims(self.get_params_for_layer(params), 1)
-          x = x + bias
+    return x
 
-        x = get_activation(layer[3])(x)
-      elif layer[0] == "feature_transform":
-        rescale = K.expand_dims(self.get_params_for_layer(params), 1)
-        shift = K.expand_dims(self.get_params_for_layer(params), 1)
-        x = x * rescale + shift
-      elif layer[0] == "lhuc":
-        r = K.expand_dims(self.get_params_for_layer(params), 1)
-        x = x * r
-      if layer[0] == "activation":
-        x = get_activation(layer[1])(x)
+  def evaluate_layer(self, layer, weights, x):
+    old_weights = weights
+    weights = reshape_params(layer["weights_shapes"], weights)
+
+    if layer["type"] == "dense":
+      x = K.batch_dot(x, weights[0], axes=[2, 1])
+
+      if layer["use_bias"]:
+        x = x + weights[1]
+
+      x = get_activation(layer["activation"])(x)
+    elif layer["type"] == "feature_transform":
+      x = x * weights[0] + weights[1]
+    elif layer["type"] == "lhuc":
+      x = x * weights[0]
+    if layer["type"] == "activation":
+      x = get_activation(layer["activation"])(x)
 
     return x
 
   def merge_params(self, params, trainable_params):
+    offset = 0
+    trainable_offset = 0
     new_params = []
 
-    self.init()
     for layer in self.layers:
-      if layer[0] == "dense":
-        input_dim = self.last_size
-        new_params.append(self.get_params_for_layer(params, size=layer[1], trainable=layer[-1], trainable_params=trainable_params))
-
-        if layer[2]:
-          new_params.append(self.get_params_for_layer(params, trainable=layer[-1], trainable_params=trainable_params))
-      elif layer[0] == "feature_transform":
-        new_params.append(self.get_params_for_layer(params, trainable=layer[-1], trainable_params=trainable_params))
-        new_params.append(self.get_params_for_layer(params, trainable=layer[-1], trainable_params=trainable_params))
-      elif layer[0] == "lhuc":
-        new_params.append(self.get_params_for_layer(params, trainable=layer[-1], trainable_params=trainable_params))
+      if layer["trainable"]:
+        new_params.append(trainable_params[:, trainable_offset:trainable_offset + layer["num_params"]])
+        trainable_offset += layer["num_params"]
+        offset += layer["num_params"]
+      else:
+        new_params.append(params[:, offset:offset + layer["num_params"]])
+        offset += layer["num_params"]
 
     return K.concatenate(new_params)
 
-  def init(self):
-    self.last_weight = 0
-    self.last_trainable_weight = 0
-    self.last_size = self.feat_dim
-
-  def get_params_for_layer(self, params, size=1, trainable=False, trainable_params=None):
-    if trainable:
-        weights = trainable_params[:, self.last_trainable_weight:self.last_trainable_weight + self.last_size * size]
-        self.last_trainable_weight += self.last_size * size
-    else:
-        weights = params[:, self.last_weight:self.last_weight + self.last_size * size]
-
-    self.last_weight += self.last_size * size
-    self.last_size = self.last_size if size == 1 else size
-
-    return weights
-
   def param_groups(self, trainable_only=True):
-    last_weight = 0
-    last_size = self.feat_dim
+    offset = 0
     for layer in self.layers:
-      if not layer[-1] and trainable_only:
-        if layer[0] == "dense":
-           last_size = layer[1]
+      if not layer["trainable"] and trainable_only:
         continue
 
-      if layer[0] == "dense":
-        if layer[2]:
-            yield (last_weight, last_weight + last_size * layer[1] + layer[1])
-            last_weight += last_size * layer[1] + layer[1]
-            last_size = layer[1]
-        else:
-            yield (last_weight, last_weight + last_size * layer[1])
-            last_weight += last_size * layer[1]
-            last_size = layer[1]
-      elif layer[0] == "feature_transform":
-        yield (last_weight, last_weight + 2 * last_size)
-        last_weight += 2 * last_size
-      elif layer[0] == "lhuc":
-        yield (last_weight, last_weight + last_size)
-        last_weight += last_size
+      if layer["num_params"] == 0:
+        continue
+
+      yield (offset, offset + layer["num_params"])
+      offset += layer["num_params"]
 
   def compute_output_shape(self, input_shape):
     return input_shape[-1][:-1] + (self.num_labels,)
