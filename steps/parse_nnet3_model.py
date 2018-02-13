@@ -2,7 +2,7 @@ import re
 import sys
 import numpy as np
 from keras.models import Sequential
-from keras.layers import Conv1D, Activation, TimeDistributed
+from keras.layers import Conv1D, Activation
 from learning_to_adapt.model.layers import LHUC
 
 
@@ -182,7 +182,7 @@ def create_model(definition, components, subsampling_factor, with_lhuc_layers):
             model.add(Activation(definition["activation"], name=node_name))
 
             if definition["activation"] not in ["linear", "softmax"] and with_lhuc_layers:
-                model.add(TimeDistributed(LHUC(name="lhuc.%s" % node_name)))
+                model.add(LHUC(name="lhuc.%s" % node_name))
         elif definition["type"] == "affine":
             weights = components[definition["name"]]
             filters = weights[1].shape[0]
