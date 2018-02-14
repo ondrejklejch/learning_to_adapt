@@ -1,5 +1,5 @@
 from keras.models import Model, Sequential, load_model
-from keras.layers import Activation, Dense, Input
+from keras.layers import Activation, Dense, Conv1D, Input
 import keras.backend as K
 import numpy as np
 import unittest
@@ -51,6 +51,18 @@ class TestWrapper(unittest.TestCase):
     expected_result = np.array([[[0., 0.]] * batch_size])
 
     prediction = wrapper.predict([params, trainable_params, x])
+    np.testing.assert_allclose(expected_result, prediction)
+
+  def testForwardPassWithConvolutionalLayers(self):
+    batch_size = 10
+    model = self.build_convolutional_model()
+    wrapper = self.build_wrapped_model(model)
+
+    params = np.array([[1., 2., 3., 4., 5., 6., 1., 1.]])
+    x = np.expand_dims(np.array([[[1., 2.]] * batch_size]), 1)
+    expected_result = np.expand_dims(np.array([[[12., 16.]] * batch_size]), 1)
+
+    prediction = wrapper.predict([params, params, x])
     np.testing.assert_allclose(expected_result, prediction)
 
   def testGetAllWeights(self):
@@ -107,6 +119,14 @@ class TestWrapper(unittest.TestCase):
     model.add(FeatureTransform(input_shape=(2,)))
     model.add(Dense(2))
     model.add(Activation('relu'))
+    model.add(LHUC())
+    model.compile(loss='mse', optimizer='SGD')
+
+    return model
+
+  def build_convolutional_model(self):
+    model = Sequential()
+    model.add(Conv1D(2, 1, activation='relu', use_bias=True, input_shape=(None, 2)))
     model.add(LHUC())
     model.compile(loss='mse', optimizer='SGD')
 

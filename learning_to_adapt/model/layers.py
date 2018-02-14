@@ -8,7 +8,7 @@ class LHUC(Layer):
 
   def build(self, input_shape):
     self.r = self.add_weight(
-        shape=(input_shape[1],),
+        shape=(input_shape[-1],),
         initializer="ones",
         name="lhuc_weights",
         trainable=self.trainable,

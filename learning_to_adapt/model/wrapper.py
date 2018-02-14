@@ -1,7 +1,7 @@
 from keras import backend as K
 from keras.activations import get as get_activation
 from keras.engine.topology import Layer
-from keras.layers import Activation, Dense
+from keras.layers import Activation, Dense, Conv1D
 from layers import FeatureTransform, LHUC
 import numpy as np
 from scipy import sparse
@@ -23,6 +23,20 @@ def create_model_wrapper(model, sparse=False, num_sparse_params=10000):
         "units": layer.units,
         "use_bias": layer.use_bias,
         "activation": layer.activation.__name__,
+        "trainable": layer.trainable,
+        "num_params": count_params(layer),
+        "weights_shapes": [w.shape for w in layer.get_weights()],
+      })
+    elif isinstance(layer, Conv1D):
+      layers.append({
+        "type": "conv1d",
+        "filters": layer.filters,
+        "kernel_size": layer.kernel_size,
+        "strides": layer.strides,
+        "padding": layer.padding,
+        "dilation_rate": layer.dilation_rate,
+        "activation": layer.activation.__name__,
+        "use_bias": layer.use_bias,
         "trainable": layer.trainable,
         "num_params": count_params(layer),
         "weights_shapes": [w.shape for w in layer.get_weights()],
@@ -158,6 +172,20 @@ class ModelWrapper(Layer):
 
     if layer["type"] == "dense":
       x = K.dot(x, weights[0])
+
+      if layer["use_bias"]:
+        x = x + weights[1]
+
+      x = get_activation(layer["activation"])(x)
+    elif layer["type"] == "conv1d":
+      x = K.conv1d(
+        x,
+        weights[0],
+        strides=layer["strides"][0],
+        padding=layer["padding"],
+        data_format="channels_last",
+        dilation_rate=layer["dilation_rate"][0]
+      )
 
       if layer["use_bias"]:
         x = x + weights[1]
