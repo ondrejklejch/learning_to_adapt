@@ -76,13 +76,8 @@ def reshape_params(shapes, params):
 
   for shape in shapes:
     size = np.prod(shape)
-    new_params = params[:, offset:offset + size]
-
-    if len(shape) == 1:
-        new_params = K.expand_dims(new_params, 1)
-    else:
-        new_params = K.reshape(new_params, (-1,) + tuple(shape))
-
+    new_params = params[0, offset:offset + size]
+    new_params = K.reshape(new_params, tuple(shape))
     reshaped_params.append(new_params)
     offset += size
 
@@ -149,19 +144,20 @@ class ModelWrapper(Layer):
         raise ValueError("Wrong number of inputs")
 
     offset = 0
+    x = x[0]
     for layer in self.layers:
       weights = params[:, offset:offset + layer["num_params"]]
       offset += layer["num_params"]
       x = self.evaluate_layer(layer, weights, x)
 
-    return x
+    return K.expand_dims(x, 0)
 
   def evaluate_layer(self, layer, weights, x):
     old_weights = weights
     weights = reshape_params(layer["weights_shapes"], weights)
 
     if layer["type"] == "dense":
-      x = K.batch_dot(x, weights[0], axes=[2, 1])
+      x = K.dot(x, weights[0])
 
       if layer["use_bias"]:
         x = x + weights[1]

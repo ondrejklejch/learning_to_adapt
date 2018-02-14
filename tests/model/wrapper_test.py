@@ -15,49 +15,41 @@ class TestWrapper(unittest.TestCase):
     model = self.build_model()
     wrapper = self.build_wrapped_model(model)
 
-    params = np.array([
-      [1., 1., 0., 0., 1., 0., 0., 1., -1., -1., 1., 1.],
-      [1., 1., 0., 0., 1., 0., 0., 1., 0., 0., 1., 1.],
-      [1., 1., 0., 0., 2., 0., 0., 2., 1., 1., 1., 1.],
-      [1., 1., 0., 0., 1., 2., 3., 4., 5., 6., 1., 1.],
-    ])
-
-    x = np.array([
-      [[1., 1.]] * batch_size,
-      [[1., 1.]] * batch_size,
-      [[1., 1.]] * batch_size,
-      [[1., 2.]] * batch_size,
-    ])
-
-    expected_result = np.array([
-      [[0., 0.]] * batch_size,
-      [[1., 1.]] * batch_size,
-      [[3., 3.]] * batch_size,
-      [[12., 16.]] * batch_size
-    ])
+    params = np.array([[1., 1., 0., 0., 1., 2., 3., 4., 5., 6., 1., 1.]])
+    x = np.array([[[1., 2.]] * batch_size])
+    expected_result = np.array([[[12., 16.]] * batch_size])
 
     prediction = wrapper.predict([params, params, x])
     np.testing.assert_allclose(expected_result, prediction)
 
   def testForwardPassWithTrainableWeights(self):
+    batch_size = 10
     model = self.build_model()
-    params = np.array([[1., 1., 0., 0., 1., 0., 0., 1., -1., -1., 1., 1.]])
-    set_model_weights(model, params[0])
     for l in model.layers:
       l.trainable = l.name.startswith("dense")
 
-    batch_size = 10
     wrapper = self.build_wrapped_model(model)
 
-    x = np.array([
-      [[1., 2.]] * batch_size,
-    ])
-
-    expected_result = np.array([
-      [[12., 16.]] * batch_size,
-    ])
-
+    params = np.array([[1., 1., 0., 0., 1., 0., 0., 1., -1., -1., 1., 1.]])
     trainable_params = np.array([[1., 2., 3., 4., 5., 6.]])
+    x = np.array([[[1., 2.]] * batch_size])
+    expected_result = np.array([[[12., 16.]] * batch_size])
+
+    prediction = wrapper.predict([params, trainable_params, x])
+    np.testing.assert_allclose(expected_result, prediction)
+
+  def testForwardPassWithSparseTrainableWeights(self):
+    batch_size = 10
+    model = self.build_model()
+    wrapper = self.build_wrapped_model(model, sparse=True)
+    wrapper.set_weights([np.array([0, 2, 4, 5, 8, 10])])
+
+    r = -356
+    params = np.array([[r, 1., r, 0., r, r, 0., 1., r, -1., r, 1.]])
+    trainable_params = np.array([[1., 0., 1., 0., -1., 1.]])
+    x = np.array([[[1., 1.]] * batch_size])
+    expected_result = np.array([[[0., 0.]] * batch_size])
+
     prediction = wrapper.predict([params, trainable_params, x])
     np.testing.assert_allclose(expected_result, prediction)
 
@@ -96,28 +88,6 @@ class TestWrapper(unittest.TestCase):
     reloaded_weights = reloaded_wrapper.get_weights()
 
     np.testing.assert_allclose(original_weights, reloaded_weights)
-
-  def testSparseModelWrapperPredictsCorrectValues(self):
-    model = self.build_model()
-    x = -356
-    params = np.array([[x, 1., x, 0., x, x, 0., 1., x, -1., x, 1.]])
-    set_model_weights(model, params[0])
-
-    batch_size = 10
-    wrapper = self.build_wrapped_model(model, sparse=True)
-    wrapper.set_weights([np.array([0, 2, 4, 5, 8, 10])])
-
-    x = np.array([
-      [[1., 1.]] * batch_size,
-    ])
-
-    expected_result = np.array([
-      [[0., 0.]] * batch_size,
-    ])
-
-    trainable_params = np.array([[1., 0., 1., 0., -1., 1.]])
-    prediction = wrapper.predict([params, trainable_params, x])
-    np.testing.assert_allclose(expected_result, prediction)
 
   def build_wrapped_model(self, model, sparse=False):
     if sparse:
