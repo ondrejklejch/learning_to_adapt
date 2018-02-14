@@ -10,13 +10,21 @@ from loop import rnn
 from wrapper import ModelWrapper, create_model_wrapper
 
 
-def create_meta_learner(wrapper, units=20, meta_learner_type='full'):
+def create_meta_learner(wrapper, units=20, meta_learner_type='full', input_type='frames'):
   feat_dim = wrapper.feat_dim
   num_params = wrapper.num_params
 
-  training_feats = Input(shape=(None, None, feat_dim,))
-  training_labels = Input(shape=(None, None, 1,))
-  testing_feats = Input(shape=(None, feat_dim,))
+  if input_type == 'frames':
+    training_feats = Input(shape=(None, None, feat_dim,))
+    training_labels = Input(shape=(None, None, 1,))
+    testing_feats = Input(shape=(None, feat_dim,))
+  elif input_type == 'sequences':
+    training_feats = Input(shape=(None, None, None, feat_dim,))
+    training_labels = Input(shape=(None, None, None, 1,))
+    testing_feats = Input(shape=(None, None, feat_dim,))
+  else:
+    raise ValueError('Undefined input type: %s' % input_type)
+
   params = Input(shape=(num_params,))
 
   if meta_learner_type == 'lr_per_parameter':
@@ -59,7 +67,6 @@ class MetaLearner(Layer):
     self.num_param_groups = len(self.param_groups)
     self.input_dim = 5
     self.units = units
-    self.input_spec = [InputSpec(ndim=4), InputSpec(ndim=4), InputSpec(ndim=2)]
 
   def build(self, input_shapes):
     self.kernel = self.add_weight(
