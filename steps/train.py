@@ -63,11 +63,28 @@ if __name__ == '__main__':
     adaptation_type = sys.argv[6]
     output_path = sys.argv[7]
 
+    if len(sys.argv) >= 9:
+        input_type = sys.argv[8]
+        return_sequences = sys.argv[8] == "sequences"
+    else:
+        input_type = "frames"
+        return_sequences = False
+
+    if len(sys.argv) >= 12:
+        subsampling_factor = int(sys.argv[9])
+        left_context = int(sys.argv[10])
+        right_context = int(sys.argv[11])
+    else:
+        subsampling_factor = 1
+        left_context = 0
+        right_context = 0
+
     model = load_acoustic_model(model_path, adaptation_type)
     model.compile(loss='sparse_categorical_crossentropy', optimizer='adam')
+    model.summary()
 
     wrapper = create_model_wrapper(model)
-    meta = create_meta_learner(wrapper, units=20)
+    meta = create_meta_learner(wrapper, units=20, input_type=input_type)
     meta.compile(
         loss=model.loss,
         optimizer=Adam(),
@@ -76,7 +93,11 @@ if __name__ == '__main__':
     meta.summary()
 
     params = get_model_weights(model)
-    num_batches, generator = load_data(params, feats, utt2spk, adapt_pdfs, test_pdfs)
+    num_batches, generator = load_data(params, feats, utt2spk, adapt_pdfs, test_pdfs,
+        subsampling_factor=subsampling_factor,
+        left_context=left_context,
+        right_context=right_context,
+        return_sequences=return_sequences)
     meta.fit_generator(generator, steps_per_epoch=num_batches, epochs=20)
     meta.save(output_path)
 
