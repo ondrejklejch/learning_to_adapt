@@ -179,6 +179,9 @@ def create_model(definition, components, subsampling_factor, with_lhuc_layers):
         if definition["type"] == "input":
             size = int(definition["dim"])
         elif definition["type"] == "activation":
+            if node_name == "output":
+                definition["activation"] = "softmax"
+
             model.add(Activation(definition["activation"], name=node_name))
 
             if definition["activation"] not in ["linear", "softmax"] and with_lhuc_layers:

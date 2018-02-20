@@ -34,6 +34,6 @@ if __name__ == '__main__':
             feats[left_context:-right_context,:] = utt_feats
             feats = np.expand_dims(feats, 0)
 
-            logProbMat = m.predict(feats)[0]
+            logProbMat = np.log(m.predict(feats)[0])
             logProbMat[logProbMat == -np.inf] = -100
             arkOut.write(utt, logProbMat)
