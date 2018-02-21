@@ -16,4 +16,5 @@ while read line; do
     echo $name
     echo $path
     bash steps/adapt_and_decode.sh $method $path $data $pdfs $frames $model $graph $decode_dir/$name
+    bash local/score_ted.sh --stm $decode_dir/stm $data $decode_dir/lang $decode_dir/$name
 done < $experiments

@@ -25,16 +25,16 @@ for dataset in dev2010 tst2010 tst2011; do
     graph="exp/dnn5_fbank/graph_TED-312MW.3gm.p07/"
     decode_dir=$dir/decode_${dataset}
 
-    steps/create_splits_by_spk.sh $data
+    ln -s `pwd`/$model/final.mdl $decode_dir/final.mdl
+    ln -s `pwd`/data/lang $decode_dir/lang
+    ln -s `pwd`/local/scoring/stms/ted.${dataset}.en-fr.en.norm.stm $decode_dir/stm
 
+    echo "Decoding: $dataset"
+    steps/create_splits_by_spk.sh $data
     $cmd JOB=1:$nj $decode_dir/log/experiments.JOB.log \
         steps/run_experiments.sh META $configs/split${nj}/JOB.scp $data $pdfs $frames $model $graph $decode_dir
 
-    ln -s `pwd`/$model/final.mdl $decode_dir/final.mdl
-    for experiment in `ls -1 $decode_dir | grep -v log | grep -v final.mdl`; do
-        time local/score_ted.sh --stm local/scoring/stms/ted.${dataset}.en-fr.en.norm.stm data/${dataset} data/lang/ $decode_dir/$experiment
-    done
-
+    echo
     echo "Best result"
     grep "Percent Total Error" $decode_dir/*/*/best_wer | sed 's/:.*= */ /;s/%.*/%/;' | sort -n -k2,2 | head -n 1
 done
