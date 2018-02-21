@@ -25,18 +25,7 @@ for dataset in dev2010 tst2010 tst2011; do
     graph="exp/dnn5_fbank/graph_TED-312MW.3gm.p07/"
     decode_dir=$dir/decode_${dataset}
 
-    # Create splits by speakers
-    cut -f 1 -d ' ' $data/spk2utt > $data/spks_list
-    num_spks=`cat $data/spks_list | wc -l`
-
-    mkdir -p $data/spks_split
-    for i in `seq $num_spks`; do
-        split_dir=$data/spks_split/$i/
-
-        mkdir -p $split_dir
-        sed -n "${i}p" $data/spks_list > $split_dir/spks_list
-        utils/subset_data_dir.sh --spk-list $split_dir/spks_list $data $split_dir || exit 1;
-    done
+    steps/create_splits_by_spk.sh $data
 
     $cmd JOB=1:$nj $decode_dir/log/experiments.JOB.log \
         steps/run_experiments.sh META $configs/split${nj}/JOB.scp $data $pdfs $frames $model $graph $decode_dir

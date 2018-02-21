@@ -30,18 +30,8 @@ for dataset in tst2011; do
     graph=exp/model/graph_TED-312MW.3gm.p07/
     decode_dir=$dir/decode_${dataset}
 
-    # Create splits by speakers
-    cut -f 1 -d ' ' $data/spk2utt > $data/spks_list
-    num_spks=`cat $data/spks_list | wc -l`
+    steps/create_splits_by_spk.sh $data
 
-    mkdir -p $data/spks_split
-    for i in `seq $num_spks`; do
-        splitdir=$data/spks_split/$i/
-
-        mkdir -p $splitdir
-        sed -n "${i}p" $data/spks_list > $splitdir/spks_list
-        utils/subset_data_dir.sh --spk-list $splitdir/spks_list $data $splitdir || exit 1;
-    done
 
     echo "Decoding ${dataset}: $decode_dir"
     $cmd JOB=1:$nj $decode_dir/log/experiments.JOB.log \
