@@ -11,7 +11,9 @@ def load_data(params, feats, utt2spk, adapt_pdfs, test_pdfs, num_frames=1000, sh
     utt_to_spk = load_utt_to_spk(utt2spk)
     feats_reader = kaldi_io.SequentialBaseFloatMatrixReader(feats)
 
-    chunks_per_spk = collections.defaultdict(list)
+    feats_per_spk = collections.defaultdict(list)
+    adapt_pdfs_per_spk = collections.defaultdict(list)
+    test_pdfs_per_spk = collections.defaultdict(list)
     for (utt, utt_feats) in feats_reader:
         if utt not in utt_to_adapt_pdfs or utt not in utt_to_test_pdfs:
             continue
@@ -20,14 +22,25 @@ def load_data(params, feats, utt2spk, adapt_pdfs, test_pdfs, num_frames=1000, sh
         utt_adapt_pdfs = utt_to_adapt_pdfs[utt]
         utt_test_pdfs = utt_to_test_pdfs[utt]
 
-        if abs(utt_feats.shape[0] / subsampling_factor - utt_adapt_pdfs.shape[0]) > 1:
+        utt_subsampled_length = utt_feats.shape[0] / subsampling_factor
+        if abs(utt_subsampled_length - utt_adapt_pdfs.shape[0]) > 1:
             continue
 
-        if abs(utt_feats.shape[0] / subsampling_factor - utt_test_pdfs.shape[0]) > 1:
+        if abs(utt_subsampled_length - utt_test_pdfs.shape[0]) > 1:
             continue
 
-        utt_feats = pad_feats(utt_feats, left_context, right_context)
-        chunks_per_spk[spk].extend(create_chunks(utt_feats, utt_adapt_pdfs, utt_test_pdfs, num_frames, shift, left_context, right_context, subsampling_factor))
+        feats_per_spk[spk].append(utt_feats[:utt_subsampled_length * subsampling_factor])
+        adapt_pdfs_per_spk[spk].append(utt_adapt_pdfs[:utt_subsampled_length])
+        test_pdfs_per_spk[spk].append(utt_test_pdfs[:utt_subsampled_length])
+
+    chunks_per_spk = collections.defaultdict(list)
+    for spk in feats_per_spk.keys():
+        feats = np.concatenate(feats_per_spk[spk])
+        adapt_pdfs = np.concatenate(adapt_pdfs_per_spk[spk])
+        test_pdfs = np.concatenate(test_pdfs_per_spk[spk])
+
+        feats = pad_feats(feats, left_context, right_context)
+        chunks_per_spk[spk].extend(create_chunks(feats, adapt_pdfs, test_pdfs, num_frames, shift, left_context, right_context, subsampling_factor))
 
     batches = []
     chunks_shift = int(math.ceil(num_frames / shift))
