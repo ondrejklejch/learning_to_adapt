@@ -5,15 +5,26 @@ import kaldi_io
 import collections
 
 
-def load_data(params, feats, utt2spk, adapt_pdfs, test_pdfs, num_frames=1000, shift=500, subsampling_factor=1, left_context=0, right_context=0, return_sequences=False):
+def load_data(params, feats, utt2spk, adapt_pdfs, test_pdfs, num_frames=1000, shift=500, chunk_size=50, subsampling_factor=1, left_context=0, right_context=0, return_sequences=False):
+    if subsampling_factor != 1:
+        raise ValueError('Data generator works only with subsampling_factor=1')
+
+    if not return_sequences:
+        raise ValueError('Data generator can return only sequences')
+
+    utts_per_spk = load_utts_per_spk(feats, utt2spk, adapt_pdfs, test_pdfs, subsampling_factor)
+    chunks_per_spk = create_chunks_per_spk(utts_per_spk, chunk_size, subsampling_factor, left_context, right_context)
+    batches = prepare_batches(params, chunks_per_spk, num_frames, shift, chunk_size, subsampling_factor, return_sequences)
+
+    return (len(batches), infinite_iterator(batches))
+
+def load_utts_per_spk(feats, utt2spk, adapt_pdfs, test_pdfs, subsampling_factor):
     utt_to_adapt_pdfs = load_utt_to_pdfs(adapt_pdfs)
     utt_to_test_pdfs = load_utt_to_pdfs(test_pdfs)
     utt_to_spk = load_utt_to_spk(utt2spk)
     feats_reader = kaldi_io.SequentialBaseFloatMatrixReader(feats)
 
-    feats_per_spk = collections.defaultdict(list)
-    adapt_pdfs_per_spk = collections.defaultdict(list)
-    test_pdfs_per_spk = collections.defaultdict(list)
+    utts_per_spk = collections.defaultdict(list)
     for (utt, utt_feats) in feats_reader:
         if utt not in utt_to_adapt_pdfs or utt not in utt_to_test_pdfs:
             continue
@@ -29,42 +40,13 @@ def load_data(params, feats, utt2spk, adapt_pdfs, test_pdfs, num_frames=1000, sh
         if abs(utt_subsampled_length - utt_test_pdfs.shape[0]) > 1:
             continue
 
-        feats_per_spk[spk].append(utt_feats[:utt_subsampled_length * subsampling_factor])
-        adapt_pdfs_per_spk[spk].append(utt_adapt_pdfs[:utt_subsampled_length])
-        test_pdfs_per_spk[spk].append(utt_test_pdfs[:utt_subsampled_length])
+        utts_per_spk[spk].append((
+            utt_feats[:utt_subsampled_length * subsampling_factor],
+            utt_adapt_pdfs[:utt_subsampled_length],
+            utt_test_pdfs[:utt_subsampled_length]
+        ))
 
-    chunks_per_spk = collections.defaultdict(list)
-    for spk in feats_per_spk.keys():
-        feats = np.concatenate(feats_per_spk[spk])
-        adapt_pdfs = np.concatenate(adapt_pdfs_per_spk[spk])
-        test_pdfs = np.concatenate(test_pdfs_per_spk[spk])
-
-        feats = pad_feats(feats, left_context, right_context)
-        chunks_per_spk[spk].extend(create_chunks(feats, adapt_pdfs, test_pdfs, num_frames, shift, left_context, right_context, subsampling_factor))
-
-    batches = []
-    chunks_shift = int(math.ceil(num_frames / shift))
-    for spk, chunks in chunks_per_spk.iteritems():
-        for offset in range(0, len(chunks) - chunks_shift):
-            params = params
-
-            if return_sequences:
-                adapt_x = np.reshape(chunks[offset][0], (1, 1) + chunks[offset][0].shape)
-                adapt_y = np.reshape(chunks[offset][1], (1, 1) + chunks[offset][1].shape)
-                test_x = np.expand_dims(chunks[offset + chunks_shift][0], 0)
-                test_y = np.expand_dims(chunks[offset + chunks_shift][2], 0)
-            else:
-                adapt_x = np.expand_dims(chunks[offset][0], 0)
-                adapt_y = np.expand_dims(chunks[offset][1], 0)
-                test_x = chunks[offset + chunks_shift][0]
-                test_y = chunks[offset + chunks_shift][2]
-
-            batches.append((
-                [np.expand_dims(x, axis=0) for x in [params, adapt_x, adapt_y, test_x]],
-                np.expand_dims(test_y, axis=0)
-            ))
-
-    return (len(batches), infinite_iterator(batches))
+    return utts_per_spk
 
 def load_utt_to_pdfs(pdfs):
     utt_to_pdfs = {}
@@ -88,6 +70,15 @@ def load_utt_to_spk(utt2spk):
 
     return utt_to_spk
 
+def create_chunks_per_spk(utts_per_spk, chunk_size, subsampling_factor, left_context, right_context):
+    chunks_per_spk = collections.defaultdict(list)
+    for spk, utts in utts_per_spk.iteritems():
+        for feats, adapt_pdfs, test_pdfs in utts:
+            feats = pad_feats(feats, left_context, right_context)
+            chunks_per_spk[spk].extend(create_chunks(feats, adapt_pdfs, test_pdfs, chunk_size, left_context, right_context, subsampling_factor))
+
+    return chunks_per_spk
+
 def pad_feats(feats, left_context, right_context):
     if left_context == 0 and right_context == 0:
         return feats
@@ -99,20 +90,54 @@ def pad_feats(feats, left_context, right_context):
 
     return padded_feats
 
+def create_chunks(feats, adapt_pdfs, test_pdfs, chunk_size, left_context, right_context, subsampling_factor):
+    if adapt_pdfs.shape[0] < 2 * chunk_size:
+        return []
 
-def create_chunks(feats, adapt_pdfs, test_pdfs, num_frames, shift, left_context, right_context, subsampling_factor):
     chunks = []
-    for offset in range(-left_context, feats.shape[0] - num_frames - right_context, shift):
-        pdfs_start = int(math.floor((offset + left_context) / float(subsampling_factor)))
-        pdfs_end = int(pdfs_start + math.ceil(num_frames / float(subsampling_factor)))
+    for offset in get_offsets(adapt_pdfs.shape[0], chunk_size):
+        chunk_feats = feats[offset:offset + chunk_size + right_context - left_context]
+        chunk_adapt_pdfs = adapt_pdfs[offset:offset + chunk_size]
+        chunk_test_pdfs = test_pdfs[offset:offset + chunk_size]
 
-        chunk_feats = feats[offset + left_context:offset + num_frames + right_context]
-        chunk_adapt_pdfs = adapt_pdfs[pdfs_start:pdfs_end]
-        chunk_test_pdfs = test_pdfs[pdfs_start:pdfs_end]
+        assert chunk_feats.shape[0] == chunk_size + right_context - left_context
 
         chunks.append((chunk_feats, chunk_adapt_pdfs, chunk_test_pdfs))
 
     return chunks
+
+def get_offsets(length, window):
+    num_chunks = (length - window) / window
+    shift = float(length - window) / num_chunks
+    return [int(shift * i) for i in range(num_chunks)] + [length - window]
+
+def prepare_batches(params, chunks_per_spk, num_frames, shift, chunk_size, subsampling_factor, return_sequences):
+    batches = []
+    chunks_per_batch = num_frames / chunk_size
+    chunks_shift = int(math.ceil(float(shift) / chunk_size))
+    for spk, chunks in chunks_per_spk.iteritems():
+        feats = np.stack([x[0] for x in chunks])
+        adapt_pdfs = np.stack([x[1] for x in chunks])
+        test_pdfs = np.stack([x[2] for x in chunks])
+
+        for offset in range(0, len(chunks) - 2 * chunks_per_batch, chunks_shift):
+            params = params
+
+            if return_sequences:
+                adapt_x = np.expand_dims(feats[offset:offset + chunks_per_batch], 0)
+                adapt_y = np.expand_dims(adapt_pdfs[offset:offset + chunks_per_batch], 0)
+                test_x = feats[offset + chunks_per_batch:offset + 2 * chunks_per_batch]
+                test_y = test_pdfs[offset + chunks_per_batch:offset + 2 * chunks_per_batch]
+            else:
+                # TODO: for nnet1 compatibility
+                pass
+
+            batches.append((
+                [np.expand_dims(x, axis=0) for x in [params, adapt_x, adapt_y, test_x]],
+                np.expand_dims(test_y, axis=0)
+            ))
+
+    return batches
 
 def infinite_iterator(batches):
     while True:
