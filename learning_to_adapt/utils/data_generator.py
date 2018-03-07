@@ -74,10 +74,27 @@ def create_chunks_per_spk(utts_per_spk, chunk_size, subsampling_factor, left_con
     chunks_per_spk = collections.defaultdict(list)
     for spk, utts in utts_per_spk.iteritems():
         for feats, adapt_pdfs, test_pdfs in utts:
-            feats = pad_feats(feats, left_context, right_context)
             chunks_per_spk[spk].extend(create_chunks(feats, adapt_pdfs, test_pdfs, chunk_size, left_context, right_context, subsampling_factor))
 
     return chunks_per_spk
+
+def create_chunks(feats, adapt_pdfs, test_pdfs, chunk_size, left_context, right_context, subsampling_factor):
+    start, end = trim_silence(test_pdfs)
+    if end - start < 2 * chunk_size:
+        return []
+
+    chunks = []
+    feats = pad_feats(feats, left_context, right_context)
+    for offset in get_offsets(start, end, chunk_size):
+        chunk_feats = feats[offset:offset + chunk_size + right_context - left_context]
+        chunk_adapt_pdfs = adapt_pdfs[offset:offset + chunk_size]
+        chunk_test_pdfs = test_pdfs[offset:offset + chunk_size]
+
+        assert chunk_feats.shape[0] == chunk_size + right_context - left_context
+
+        chunks.append((chunk_feats, chunk_adapt_pdfs, chunk_test_pdfs))
+
+    return chunks
 
 def pad_feats(feats, left_context, right_context):
     if left_context == 0 and right_context == 0:
@@ -90,26 +107,27 @@ def pad_feats(feats, left_context, right_context):
 
     return padded_feats
 
-def create_chunks(feats, adapt_pdfs, test_pdfs, chunk_size, left_context, right_context, subsampling_factor):
-    if adapt_pdfs.shape[0] < 2 * chunk_size:
-        return []
+def trim_silence(pdfs):
+    silence_pdfs = set([0,41,43,60,118])
 
-    chunks = []
-    for offset in get_offsets(adapt_pdfs.shape[0], chunk_size):
-        chunk_feats = feats[offset:offset + chunk_size + right_context - left_context]
-        chunk_adapt_pdfs = adapt_pdfs[offset:offset + chunk_size]
-        chunk_test_pdfs = test_pdfs[offset:offset + chunk_size]
+    pdfs = pdfs.flatten()
+    for start in range(pdfs.shape[0]):
+        if pdfs[start] not in silence_pdfs:
+            break
 
-        assert chunk_feats.shape[0] == chunk_size + right_context - left_context
+    for end in reversed(range(pdfs.shape[0])):
+        if pdfs[end] not in silence_pdfs:
+            break
 
-        chunks.append((chunk_feats, chunk_adapt_pdfs, chunk_test_pdfs))
+    return start, end
 
-    return chunks
 
-def get_offsets(length, window):
+
+def get_offsets(start, end, window):
+    length = end - start
     num_chunks = (length - window) / window
     shift = float(length - window) / num_chunks
-    return [int(shift * i) for i in range(num_chunks)] + [length - window]
+    return [start + int(shift * i) for i in range(num_chunks)] + [length - window]
 
 def prepare_batches(params, chunks_per_spk, num_frames, shift, chunk_size, subsampling_factor, return_sequences):
     batches = []
