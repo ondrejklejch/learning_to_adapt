@@ -4,6 +4,8 @@ import random
 import kaldi_io
 import collections
 
+SILENCE_PDFS = set([0,41,43,60,118])
+
 
 def load_data(params, feats, utt2spk, adapt_pdfs, test_pdfs, num_frames=1000, shift=500, chunk_size=50, subsampling_factor=1, left_context=0, right_context=0, return_sequences=False):
     if subsampling_factor != 1:
@@ -90,9 +92,9 @@ def create_chunks(feats, adapt_pdfs, test_pdfs, chunk_size, left_context, right_
         chunk_adapt_pdfs = adapt_pdfs[offset:offset + chunk_size]
         chunk_test_pdfs = test_pdfs[offset:offset + chunk_size]
 
-        assert chunk_feats.shape[0] == chunk_size + right_context - left_context
-
-        chunks.append((chunk_feats, chunk_adapt_pdfs, chunk_test_pdfs))
+        num_silent_phones = len([x for x in chunk_test_pdfs.flatten() if x in SILENCE_PDFS])
+        if num_silent_phones <= chunk_size * 0.1:
+            chunks.append((chunk_feats, chunk_adapt_pdfs, chunk_test_pdfs))
 
     return chunks
 
@@ -108,20 +110,16 @@ def pad_feats(feats, left_context, right_context):
     return padded_feats
 
 def trim_silence(pdfs):
-    silence_pdfs = set([0,41,43,60,118])
-
     pdfs = pdfs.flatten()
     for start in range(pdfs.shape[0]):
-        if pdfs[start] not in silence_pdfs:
+        if pdfs[start] not in SILENCE_PDFS:
             break
 
     for end in reversed(range(pdfs.shape[0])):
-        if pdfs[end] not in silence_pdfs:
+        if pdfs[end] not in SILENCE_PDFS:
             break
 
     return start, end
-
-
 
 def get_offsets(start, end, window):
     length = end - start
