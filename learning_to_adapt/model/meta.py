@@ -27,8 +27,8 @@ def create_meta_learner(wrapper, units=20, meta_learner_type='full', input_type=
 
   params = Input(shape=(num_params,))
 
-  if meta_learner_type == 'lr_per_parameter':
-    meta_learner = LearningRatePerParameterMetaLearner(wrapper)
+  if meta_learner_type == 'lr_per_layer':
+    meta_learner = LearningRatePerLayerMetaLearner(wrapper)
   elif meta_learner_type == 'full':
     meta_learner = MetaLearner(wrapper, units)
   else:
@@ -47,7 +47,7 @@ def load_meta_learner(model, path):
   custom_objects={
     'MetaLearner': MetaLearner,
     'ModelWrapper': ModelWrapper,
-    'LearningRatePerParameterMetaLearner': LearningRatePerParameterMetaLearner
+    'LearningRatePerLayerMetaLearner': LearningRatePerLayerMetaLearner
   }
 
   model = load_model(path, custom_objects=custom_objects)
@@ -246,17 +246,19 @@ class MetaLearner(Layer):
     return cls(wrapper, units)
 
 
-class LearningRatePerParameterMetaLearner(Layer):
+class LearningRatePerLayerMetaLearner(Layer):
 
   def __init__(self, wrapper, **kwargs):
-    super(LearningRatePerParameterMetaLearner, self).__init__(**kwargs)
+    super(LearningRatePerLayerMetaLearner, self).__init__(**kwargs)
 
     self.wrapper = wrapper
+    self.param_groups = list(wrapper.param_groups())
+    self.num_param_groups = len(self.param_groups)
     self.num_trainable_params = self.wrapper.num_trainable_params
 
   def build(self, input_shapes):
     self.learning_rate = self.add_weight(
-      shape=(self.num_trainable_params, 1),
+      shape=(self.num_param_groups, 1),
       name='learning_rate',
       initializer='zeros'
     )
@@ -286,7 +288,13 @@ class LearningRatePerParameterMetaLearner(Layer):
     feats, labels = inputs
     params = states[0]
     gradients = self.compute_gradients(params, feats, labels)
-    new_params = params - K.exp(self.learning_rate) * gradients
+
+    new_params = []
+    for param_group, indices in enumerate(self.param_groups):
+      s, e = indices
+      new_params.append(params[s:e] - self.learning_rate[param_group] * gradients[s:e])
+
+    new_params = K.concatenate(new_params, axis=0)
 
     return [new_params], [new_params]
 
