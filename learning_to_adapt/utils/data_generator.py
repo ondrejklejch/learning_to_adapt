@@ -7,7 +7,7 @@ import collections
 SILENCE_PDFS = set([0,41,43,60,118])
 
 
-def load_data(params, feats, utt2spk, adapt_pdfs, test_pdfs, num_frames=1000, shift=500, chunk_size=50, subsampling_factor=1, left_context=0, right_context=0, return_sequences=False):
+def load_data(params, feats, utt2spk, adapt_pdfs, test_pdfs, num_frames=1000, shift=500, chunk_size=50, subsampling_factor=1, left_context=0, right_context=0, adaptation_steps=1, return_sequences=False):
     if subsampling_factor != 1:
         raise ValueError('Data generator works only with subsampling_factor=1')
 
@@ -16,7 +16,7 @@ def load_data(params, feats, utt2spk, adapt_pdfs, test_pdfs, num_frames=1000, sh
 
     utts_per_spk = load_utts_per_spk(feats, utt2spk, adapt_pdfs, test_pdfs, subsampling_factor)
     chunks_per_spk = create_chunks_per_spk(utts_per_spk, chunk_size, subsampling_factor, left_context, right_context)
-    batches = prepare_batches(params, chunks_per_spk, num_frames, shift, chunk_size, subsampling_factor, return_sequences)
+    batches = prepare_batches(params, chunks_per_spk, num_frames, shift, chunk_size, subsampling_factor, adaptation_steps, return_sequences)
 
     return (len(batches), infinite_iterator(batches))
 
@@ -127,7 +127,7 @@ def get_offsets(start, end, window):
     shift = float(length - window) / num_chunks
     return [start + int(shift * i) for i in range(num_chunks)] + [length - window]
 
-def prepare_batches(params, chunks_per_spk, num_frames, shift, chunk_size, subsampling_factor, return_sequences):
+def prepare_batches(params, chunks_per_spk, num_frames, shift, chunk_size, subsampling_factor, adaptation_steps, return_sequences):
     batches = []
     chunks_per_batch = num_frames / chunk_size
     chunks_shift = int(math.ceil(float(shift) / chunk_size))
@@ -147,6 +147,10 @@ def prepare_batches(params, chunks_per_spk, num_frames, shift, chunk_size, subsa
             else:
                 # TODO: for nnet1 compatibility
                 pass
+
+            if adaptation_steps > 1:
+                adapt_x = np.repeat(adapt_x, adaptation_steps, axis=0)
+                adapt_y = np.repeat(adapt_y, adaptation_steps, axis=0)
 
             batches.append((
                 [np.expand_dims(x, axis=0) for x in [params, adapt_x, adapt_y, test_x]],
