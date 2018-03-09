@@ -3,7 +3,7 @@ import sys
 import numpy as np
 from keras.models import Sequential
 from keras.layers import Conv1D, Activation
-from learning_to_adapt.model.layers import LHUC
+from learning_to_adapt.model.layers import LHUC, Renorm
 
 
 def parse_nnet3(path):
@@ -15,7 +15,7 @@ def parse_nnet3(path):
         components = parse_components(f)
 
         line = f.readline().strip()
-        assert line == "</Nnet3>"  
+        assert line == "</Nnet3>"
 
         return definition, components
 
@@ -47,7 +47,7 @@ def parse_node_definitions(f):
                     "type": "affine",
                     "name": match.group(2),
                     "kernel_size": kernel_size,
-                    "strides": 1, 
+                    "strides": 1,
                     "dilation_rate": dilation_rate,
                     "input": input_node,
                     "offsets": offsets
@@ -61,7 +61,12 @@ def parse_node_definitions(f):
             elif match.group(2).endswith("log-softmax"):
                 nodes[match.group(1)] = {
                     "type": "activation",
-                    "activation": "softmax",
+                    "activation": "linear",
+                    "input": match.group(3)
+                }
+            elif match.group(2).endswith("renorm"):
+                nodes[match.group(1)] = {
+                    "type": "renorm",
                     "input": match.group(3)
                 }
             else:
@@ -165,7 +170,7 @@ def create_model(definition, components, subsampling_factor, with_lhuc_layers):
                 current_node["dilation_rate"] = 1
             elif current_node["dilation_rate"] == 1:
                 current_node["strides"] = subsampling_factor
-                subsampling_factor = 1 
+                subsampling_factor = 1
             else:
                 raise ValueError("Unable to optimize graph.")
 
@@ -203,10 +208,12 @@ def create_model(definition, components, subsampling_factor, with_lhuc_layers):
                 filters, kernel_size, strides=strides, padding=padding,
                 dilation_rate=dilation_rate, use_bias=True,
                 weights=(kernel, bias), input_shape=(None, size),
-		name = node_name
+                name = node_name
             ))
 
             size = filters
+        elif definition["type"] == "renorm":
+            model.add(Renorm(name=node_name))
 
     return model, left_context, right_context
 

@@ -2,7 +2,7 @@ from keras import backend as K
 from keras.activations import get as get_activation
 from keras.engine.topology import Layer
 from keras.layers import Activation, Dense, Conv1D
-from layers import FeatureTransform, LHUC
+from layers import FeatureTransform, LHUC, Renorm
 import numpy as np
 from scipy import sparse
 import tensorflow as tf
@@ -52,6 +52,14 @@ def create_model_wrapper(model, sparse=False, num_sparse_params=10000):
     elif isinstance(layer, LHUC):
       layers.append({
         "type": "lhuc",
+        "trainable": layer.trainable,
+        "num_params": count_params(layer),
+        "weights_shapes": [w.shape for w in layer.get_weights()],
+      })
+    elif isinstance(layer, Renorm):
+      layers.append({
+        "type": "renorm",
+        "activation": layer.activation.__name__,
         "trainable": layer.trainable,
         "num_params": count_params(layer),
         "weights_shapes": [w.shape for w in layer.get_weights()],
@@ -195,7 +203,10 @@ class ModelWrapper(Layer):
       x = x * weights[0] + weights[1]
     elif layer["type"] == "lhuc":
       x = x * weights[0]
-    if layer["type"] == "activation":
+    elif layer["type"] == "renorm":
+      dim = K.cast(K.shape(x)[-1], K.floatx())
+      x = K.l2_normalize(x, axis=-1) * K.sqrt(dim)
+    elif layer["type"] == "activation":
       x = get_activation(layer["activation"])(x)
 
     return x

@@ -4,7 +4,7 @@ import numpy as np
 from keras.models import load_model
 from keras.optimizers import Adam
 
-from learning_to_adapt.model import create_meta_learner, create_model_wrapper, get_model_weights, FeatureTransform, LHUC
+from learning_to_adapt.model import create_meta_learner, create_model_wrapper, get_model_weights, FeatureTransform, LHUC, Renorm
 from learning_to_adapt.utils import load_data
 
 
@@ -42,7 +42,8 @@ def compute_adapted_frame_accuracy(meta, generator, num_batches):
 def load_acoustic_model(path, adaptation_type="ALL"):
     custom_objects = {
         'FeatureTransform': FeatureTransform,
-        'LHUC': LHUC
+        'LHUC': LHUC,
+        'Renorm': Renorm,
     }
 
     model = load_model(model_path, custom_objects=custom_objects)

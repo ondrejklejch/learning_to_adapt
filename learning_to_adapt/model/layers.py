@@ -21,6 +21,16 @@ class LHUC(Layer):
     return input_shape
 
 
+class Renorm(Layer):
+
+  def call(self, x):
+    dim = K.cast(K.shape(x)[-1], K.floatx())
+    return K.l2_normalize(x, axis=-1) * K.sqrt(dim)
+
+  def compute_output_shape(self, input_shape):
+    return input_shape
+
+
 class FeatureTransform(Layer):
 
   def build(self, input_shape):
