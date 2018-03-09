@@ -94,13 +94,21 @@ if __name__ == '__main__':
     meta.summary()
 
     params = get_model_weights(model)
-    num_batches, generator = load_data(params, feats, utt2spk, adapt_pdfs, test_pdfs,
+    num_train_batches, train_generator, num_val_batches, val_generator = load_data(
+        params, feats, utt2spk, adapt_pdfs, test_pdfs,
         subsampling_factor=subsampling_factor,
         left_context=left_context,
         right_context=right_context,
         return_sequences=return_sequences)
-    meta.fit_generator(generator, steps_per_epoch=num_batches, epochs=20)
+
+    print "Frame accuracy of the original model is: %.4f" % compute_frame_accuracy(model, val_generator, num_val_batches)
+
+    meta.fit_generator(
+        generator=train_generator,
+        steps_per_epoch=num_train_batches,
+        validation_data=val_generator,
+        validation_steps=num_val_batches,
+        epochs=20)
     meta.save(output_path)
 
-    print "Frame accuracy of the original model is: %.4f" % compute_frame_accuracy(model, generator, num_batches)
-    print "Frame accuracy of the adapted model is: %.4f" % compute_adapted_frame_accuracy(meta, generator, num_batches)
+    print "Frame accuracy of the adapted model is: %.4f" % compute_adapted_frame_accuracy(meta, val_generator, num_val_batches)

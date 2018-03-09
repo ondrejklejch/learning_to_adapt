@@ -7,7 +7,7 @@ import collections
 SILENCE_PDFS = set([0,41,43,60,118])
 
 
-def load_data(params, feats, utt2spk, adapt_pdfs, test_pdfs, num_frames=1000, shift=500, chunk_size=50, subsampling_factor=1, left_context=0, right_context=0, adaptation_steps=1, return_sequences=False):
+def load_data(params, feats, utt2spk, adapt_pdfs, test_pdfs, num_frames=1000, shift=500, chunk_size=50, subsampling_factor=1, left_context=0, right_context=0, adaptation_steps=1, return_sequences=False, validation_speakers=2):
     if subsampling_factor != 1:
         raise ValueError('Data generator works only with subsampling_factor=1')
 
@@ -16,9 +16,12 @@ def load_data(params, feats, utt2spk, adapt_pdfs, test_pdfs, num_frames=1000, sh
 
     utts_per_spk = load_utts_per_spk(feats, utt2spk, adapt_pdfs, test_pdfs, subsampling_factor)
     chunks_per_spk = create_chunks_per_spk(utts_per_spk, chunk_size, subsampling_factor, left_context, right_context)
-    batches = prepare_batches(params, chunks_per_spk, num_frames, shift, chunk_size, subsampling_factor, adaptation_steps, return_sequences)
 
-    return (len(batches), infinite_iterator(batches))
+    spks = sorted(chunks_per_spk.keys())
+    train_batches = prepare_batches(spks[:-validation_speakers], params, chunks_per_spk, num_frames, shift, chunk_size, subsampling_factor, adaptation_steps, return_sequences)
+    val_batches = prepare_batches(spks[-validation_speakers:], params, chunks_per_spk, num_frames, shift, chunk_size, subsampling_factor, adaptation_steps, return_sequences)
+
+    return (len(train_batches), infinite_iterator(train_batches), len(val_batches), infinite_iterator(val_batches))
 
 def load_utts_per_spk(feats, utt2spk, adapt_pdfs, test_pdfs, subsampling_factor):
     utt_to_adapt_pdfs = load_utt_to_pdfs(adapt_pdfs)
@@ -127,11 +130,12 @@ def get_offsets(start, end, window):
     shift = float(length - window) / num_chunks
     return [start + int(shift * i) for i in range(num_chunks)] + [length - window]
 
-def prepare_batches(params, chunks_per_spk, num_frames, shift, chunk_size, subsampling_factor, adaptation_steps, return_sequences):
+def prepare_batches(spks, params, chunks_per_spk, num_frames, shift, chunk_size, subsampling_factor, adaptation_steps, return_sequences):
     batches = []
     chunks_per_batch = num_frames / chunk_size
     chunks_shift = int(math.ceil(float(shift) / chunk_size))
-    for spk, chunks in chunks_per_spk.iteritems():
+    for spk in spks:
+        chunks = chunks_per_spk[spk]
         feats = np.stack([x[0] for x in chunks])
         adapt_pdfs = np.stack([x[1] for x in chunks])
         test_pdfs = np.stack([x[2] for x in chunks])
