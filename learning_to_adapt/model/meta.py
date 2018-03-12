@@ -65,7 +65,7 @@ class MetaLearner(Layer):
     self.wrapper = wrapper
     self.param_groups = list(wrapper.param_groups())
     self.num_param_groups = len(self.param_groups)
-    self.input_dim = 5
+    self.input_dim = 6
     self.units = units
 
   def build(self, input_shapes):
@@ -123,6 +123,7 @@ class MetaLearner(Layer):
 
     self.params = params
     trainable_params = self.wrapper.get_trainable_params(params)
+    self.param_coordinates = self.wrapper.get_param_coordinates()
 
     last_output, _, _ = rnn(
       step_function=self.step,
@@ -182,7 +183,7 @@ class MetaLearner(Layer):
     preprocessed_loss = self.preprocess(loss)
 
     inputs = K.stop_gradient(K.concatenate([
-      trainable_params,
+      self.param_coordinates,
       preprocessed_gradients[0],
       preprocessed_gradients[1],
       preprocessed_loss[0],

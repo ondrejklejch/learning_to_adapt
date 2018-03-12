@@ -91,6 +91,23 @@ def create_model_wrapper(model, sparse=False, num_sparse_params=10000):
 def count_params(layer):
   return sum([w.flatten().shape[0] for w in layer.get_weights()])
 
+def parameter_coordinates(shapes):
+  num_params = np.sum([np.prod(shape) for shape in shapes])
+  output_dims = [shape[-1] for shape in shapes]
+
+  if not output_dims:
+    return []
+
+  output_dim = output_dims[0]
+  input_dim = num_params / output_dim
+  if not all([dim == output_dim for dim in output_dims]):
+    raise ValueError("Can't handle different output dimensions")
+
+  return np.stack([
+    np.stack([np.arange(input_dim)] * output_dim).flatten() / float(input_dim),
+    np.stack([np.arange(output_dim)] * input_dim).T.flatten() / float(output_dim)
+  ], axis=-1)
+
 def reshape_params(shapes, params):
   reshaped_params = []
   offset = 0
@@ -154,6 +171,16 @@ class ModelWrapper(Layer):
       offset += layer["num_params"]
 
     return K.concatenate(trainable_params)
+
+  def get_param_coordinates(self):
+    coordinates = []
+    for layer in self.layers:
+      if not layer["trainable"] or layer["num_params"] == 0:
+        continue
+
+      coordinates.append(parameter_coordinates(layer["weights_shapes"]))
+
+    return K.constant(np.concatenate(coordinates))
 
   def call(self, inputs):
     if len(inputs) == 3:
