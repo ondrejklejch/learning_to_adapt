@@ -59,7 +59,6 @@ def create_model_wrapper(model, sparse=False, num_sparse_params=10000):
     elif isinstance(layer, Renorm):
       layers.append({
         "type": "renorm",
-        "activation": layer.activation.__name__,
         "trainable": layer.trainable,
         "num_params": count_params(layer),
         "weights_shapes": [w.shape for w in layer.get_weights()],
