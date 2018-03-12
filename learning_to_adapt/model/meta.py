@@ -5,12 +5,13 @@ from keras.engine.topology import Layer
 from keras.initializers import Ones, Zeros, Constant
 from keras.layers import Input, GaussianNoise, deserialize
 from keras.models import Model, load_model
+from keras.regularizers import l1
 
 from loop import rnn
 from wrapper import ModelWrapper, create_model_wrapper
 
 
-def create_meta_learner(wrapper, units=20, meta_learner_type='full', input_type='frames'):
+def create_meta_learner(wrapper, units=20, meta_learner_type='full', input_type='frames', l1=0.001):
   feat_dim = wrapper.feat_dim
   num_params = wrapper.num_params
 
@@ -36,6 +37,8 @@ def create_meta_learner(wrapper, units=20, meta_learner_type='full', input_type=
 
   new_params = meta_learner([training_feats, training_labels, params])
   predictions = wrapper([new_params, testing_feats])
+
+  meta_learner.add_loss(l1 * K.sum(K.abs(new_params - params)))
 
   return Model(
     inputs=[params, training_feats, training_labels, testing_feats],
