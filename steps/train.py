@@ -1,6 +1,7 @@
 import sys
 import numpy as np
 
+from keras.callbacks import ModelCheckpoint
 from keras.models import load_model
 from keras.optimizers import Adam
 
@@ -96,19 +97,21 @@ if __name__ == '__main__':
     params = get_model_weights(model)
     num_train_batches, train_generator, num_val_batches, val_generator = load_data(
         params, feats, utt2spk, adapt_pdfs, test_pdfs,
+        validation_speakers=5,
         subsampling_factor=subsampling_factor,
         left_context=left_context,
         right_context=right_context,
         return_sequences=return_sequences)
 
-    print "Frame accuracy of the original model is: %.4f" % compute_frame_accuracy(model, val_generator, num_val_batches)
+    print "Frame accuracy on train is: %.4f" % compute_frame_accuracy(model, train_generator, num_train_batches)
+    print "Frame accuracy on val is: %.4f" % compute_frame_accuracy(model, val_generator, num_val_batches)
 
     meta.fit_generator(
         generator=train_generator,
         steps_per_epoch=num_train_batches,
         validation_data=val_generator,
         validation_steps=num_val_batches,
+        callbacks=[ModelCheckpoint(filepath=output_path, save_best_only=True)],
         epochs=20)
-    meta.save(output_path)
 
     print "Frame accuracy of the adapted model is: %.4f" % compute_adapted_frame_accuracy(meta, val_generator, num_val_batches)
