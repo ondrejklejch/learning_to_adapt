@@ -15,6 +15,9 @@ if [ -f $src_dir/frame_subsampling_factor ]; then
 fi
 
 echo $frame_subsampling > $out_dir/frame_subsampling_factor
+echo "--left-context=0 --right-context=0" > $out_dir/splice_opts
+echo "--delta-order=0" > $out_dir/delta_opts
+
 cp -r $src_dir/{final.mdl,graph,cmvn_opts,pdf_counts} $out_dir
 nnet3-copy --binary=false --prepare-for-test=true $out_dir/final.mdl $out_dir/final.txt
 python steps/parse_nnet3_model.py $out_dir $frame_subsampling $with_lhuc_layers

@@ -4,7 +4,11 @@ import random
 import kaldi_io
 import collections
 
+# TDNN
 SILENCE_PDFS = set([0,41,43,60,118])
+
+# NNET1
+SILENCE_PDFS = set([0,154,46,54,57])
 
 
 def load_data(params, feats, utt2spk, adapt_pdfs, test_pdfs, num_frames=1000, shift=500, chunk_size=50, subsampling_factor=1, left_context=0, right_context=0, adaptation_steps=1, return_sequences=False, validation_speakers=2):

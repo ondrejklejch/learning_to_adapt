@@ -35,13 +35,13 @@ class FeatureTransform(Layer):
 
   def build(self, input_shape):
     self.rescale = self.add_weight(
-      shape=(input_shape[1],),
+      shape=(input_shape[-1],),
       initializer="ones",
       name="rescale",
       trainable=self.trainable)
 
     self.shift = self.add_weight(
-      shape=(input_shape[1],),
+      shape=(input_shape[-1],),
       initializer="zeros",
       name="shift",
       trainable=self.trainable)

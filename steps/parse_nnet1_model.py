@@ -1,7 +1,7 @@
 import sys
 import numpy as np
 from keras.models import Sequential
-from keras.layers import Dense, Activation
+from keras.layers import Conv1D, Activation
 from learning_to_adapt.model.layers import LHUC, FeatureTransform
 
 
@@ -33,7 +33,7 @@ def parse_feature_transform(line_buffer):
       shift = parse_vector(line)
 
   return [
-    FeatureTransform(input_shape=(rescale.shape[0],), weights=[rescale, shift])
+    FeatureTransform(input_shape=(None, rescale.shape[0]), weights=[rescale, shift])
   ]
 
 
@@ -46,12 +46,12 @@ def parse_component(line, line_buffer, with_lhuc_layers):
     # Reads Learning Rate
     next(f)
 
-    kernel = parse_weights(f, input_dim, output_dim)
+    kernel = np.expand_dims(parse_weights(f, input_dim, output_dim).T, 0)
     bias = parse_bias(f, output_dim)
 
     parse_end_of_component(f)
 
-    return [Dense(output_dim, input_shape=(input_dim,), weights=[kernel.T, bias], trainable=True)]
+    return [Conv1D(output_dim, 1, input_shape=(None, input_dim), weights=[kernel, bias], trainable=True)]
   elif line.startswith("<Sigmoid>"):
     parse_end_of_component(f)
 
@@ -103,18 +103,9 @@ if __name__ == "__main__":
   components = []
 
   root = sys.argv[1]
-  pdf_counts = "%s/ali_train_pdf.counts" % root
   feature_transform = "%s/final.feature_transform" % root
   model = "%s/final.txt" % root
   output = root
-
-  with open(pdf_counts, "r") as f:
-    counts = parse_vector(next(f), float, "int32")
-    priors = counts / np.sum(counts).astype("float32")
-
-    with open("%s/dnn.priors.csv" % output, "w") as out:
-      for x in priors:
-        print >> out, "%e" % x
 
   with open(feature_transform, "r") as f:
     components.extend(parse_feature_transform(f))
@@ -127,3 +118,4 @@ if __name__ == "__main__":
     model.add(component)
 
   model.save("%s/dnn.nnet.h5" % output)
+  model.summary()
