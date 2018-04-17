@@ -7,11 +7,8 @@ import collections
 # TDNN
 SILENCE_PDFS = set([0,41,43,60,118])
 
-# NNET1
-SILENCE_PDFS = set([0,154,46,54,57])
 
-
-def load_data(params, feats, utt2spk, adapt_pdfs, test_pdfs, num_frames=1000, shift=500, chunk_size=50, subsampling_factor=1, left_context=0, right_context=0, adaptation_steps=1, return_sequences=False, validation_speakers=2):
+def load_data(params, feats, utt2spk, adapt_pdfs, test_pdfs, num_frames=1000, shift=500, chunk_size=50, subsampling_factor=1, left_context=0, right_context=0, adaptation_steps=1, return_sequences=False, validation_speakers=0.1):
     if subsampling_factor != 1:
         raise ValueError('Data generator works only with subsampling_factor=1')
 
@@ -21,11 +18,12 @@ def load_data(params, feats, utt2spk, adapt_pdfs, test_pdfs, num_frames=1000, sh
     utts_per_spk = load_utts_per_spk(feats, utt2spk, adapt_pdfs, test_pdfs, subsampling_factor)
     chunks_per_spk = create_chunks_per_spk(utts_per_spk, chunk_size, subsampling_factor, left_context, right_context)
 
-    spks = sorted(chunks_per_spk.keys())
-    train_batches = prepare_batches(spks[:-validation_speakers], params, chunks_per_spk, num_frames, shift, chunk_size, subsampling_factor, adaptation_steps, return_sequences)
-    val_batches = prepare_batches(spks[-validation_speakers:], params, chunks_per_spk, num_frames, shift, chunk_size, subsampling_factor, adaptation_steps, return_sequences)
+    spks = sorted([spk for spk in chunks_per_spk.keys() if len(chunks_per_spk[spk])])
+    validation_speakers = int(len(spks) * validation_speakers)
+    num_train_batches, train_batches_iterator = prepare_batches(spks[:-validation_speakers], params, chunks_per_spk, num_frames, shift, chunk_size, subsampling_factor, adaptation_steps, return_sequences)
+    num_val_batches, val_batches_iterator = prepare_batches(spks[-validation_speakers:], params, chunks_per_spk, num_frames, shift, chunk_size, subsampling_factor, adaptation_steps, return_sequences)
 
-    return (len(train_batches), infinite_iterator(train_batches), len(val_batches), infinite_iterator(val_batches))
+    return (num_train_batches, train_batches_iterator, num_val_batches, val_batches_iterator)
 
 def load_utts_per_spk(feats, utt2spk, adapt_pdfs, test_pdfs, subsampling_factor):
     utt_to_adapt_pdfs = load_utt_to_pdfs(adapt_pdfs)
@@ -138,38 +136,34 @@ def prepare_batches(spks, params, chunks_per_spk, num_frames, shift, chunk_size,
     batches = []
     chunks_per_batch = num_frames / chunk_size
     chunks_shift = int(math.ceil(float(shift) / chunk_size))
+    offsets = prepare_offsets(spks, chunks_per_spk, chunks_per_batch, chunks_shift)
+
+    return len(offsets), infinite_generator(offsets, chunks_per_spk, params, adaptation_steps)
+
+def prepare_offsets(spks, chunks_per_spk, chunks_per_batch, chunks_shift):
+    offsets = []
     for spk in spks:
-        chunks = chunks_per_spk[spk]
-        feats = np.stack([x[0] for x in chunks])
-        adapt_pdfs = np.stack([x[1] for x in chunks])
-        test_pdfs = np.stack([x[2] for x in chunks])
+        for offset in range(0, len(chunks_per_spk[spk]) - 2 * chunks_per_batch, chunks_shift):
+            offsets.append((spk, offset, offset + chunks_per_batch, offset + chunks_per_batch, offset + 2 * chunks_per_batch))
 
-        for offset in range(0, len(chunks) - 2 * chunks_per_batch, chunks_shift):
+    return offsets
+
+def infinite_generator(offsets, chunks_per_spk, params, adaptation_steps):
+    while True:
+        random.shuffle(offsets)
+
+        for (spk, adapt_start, adapt_end, test_start, test_end) in offsets:
             params = params
-
-            if return_sequences:
-                adapt_x = np.expand_dims(feats[offset:offset + chunks_per_batch], 0)
-                adapt_y = np.expand_dims(adapt_pdfs[offset:offset + chunks_per_batch], 0)
-                test_x = feats[offset + chunks_per_batch:offset + 2 * chunks_per_batch]
-                test_y = test_pdfs[offset + chunks_per_batch:offset + 2 * chunks_per_batch]
-            else:
-                # TODO: for nnet1 compatibility
-                pass
+            adapt_x = np.expand_dims(np.stack([x[0] for x in chunks_per_spk[spk][adapt_start:adapt_end]]), 0)
+            adapt_y = np.expand_dims(np.stack([x[1] for x in chunks_per_spk[spk][adapt_start:adapt_end]]), 0)
+            test_x = np.stack([x[0] for x in chunks_per_spk[spk][test_start:test_end]])
+            test_y = np.stack([x[2] for x in chunks_per_spk[spk][test_start:test_end]])
 
             if adaptation_steps > 1:
                 adapt_x = np.repeat(adapt_x, adaptation_steps, axis=0)
                 adapt_y = np.repeat(adapt_y, adaptation_steps, axis=0)
 
-            batches.append((
+            yield (
                 [np.expand_dims(x, axis=0) for x in [params, adapt_x, adapt_y, test_x]],
                 np.expand_dims(test_y, axis=0)
-            ))
-
-    return batches
-
-def infinite_iterator(batches):
-    while True:
-        random.shuffle(batches)
-
-        for batch in batches:
-            yield batch
+            )
