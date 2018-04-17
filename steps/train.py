@@ -111,7 +111,11 @@ if __name__ == '__main__':
         steps_per_epoch=num_train_batches,
         validation_data=val_generator,
         validation_steps=num_val_batches,
-        callbacks=[ModelCheckpoint(filepath=output_path, save_best_only=True)],
+        callbacks=[
+            ModelCheckpoint(filepath=output_path, save_best_only=False),
+            ModelCheckpoint(filepath=output_path + ".best.h5", save_best_only=True)
+        ],
         epochs=20)
+    meta.save(output_path)
 
     print "Frame accuracy of the adapted model is: %.4f" % compute_adapted_frame_accuracy(meta, val_generator, num_val_batches)
