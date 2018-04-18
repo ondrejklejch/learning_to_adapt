@@ -1,7 +1,7 @@
 import sys
 import numpy as np
 
-from keras.callbacks import ModelCheckpoint
+from keras.callbacks import ModelCheckpoint, CSVLogger
 from keras.models import load_model
 from keras.optimizers import Adam
 
@@ -112,6 +112,7 @@ if __name__ == '__main__':
         validation_data=val_generator,
         validation_steps=num_val_batches,
         callbacks=[
+            CSVLogger(output_path + ".csv"),
             ModelCheckpoint(filepath=output_path, save_best_only=False),
             ModelCheckpoint(filepath=output_path + ".best.h5", save_best_only=True)
         ],
