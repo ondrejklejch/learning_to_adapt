@@ -9,36 +9,26 @@ from learning_to_adapt.model import create_meta_learner, create_model_wrapper, g
 from learning_to_adapt.utils import load_data
 
 
-def compute_frame_accuracy(model, generator, num_batches):
-    predictions = []
-    labels = []
 
+def compute_frame_accuracy(model, generator, num_batches):
+    accuracies = []
     for i in range(num_batches):
         x, y = next(generator)
 
-        predictions.append(np.argmax(model.predict(x[-1][0]), axis=-1))
-        labels.append(y)
+        predictions = np.argmax(model.predict(x[-1][0]), axis=-1)
+        accuracies.append(np.mean(predictions.flatten() == y.flatten()))
 
-    predictions = np.concatenate(predictions).flatten()
-    labels = np.concatenate(labels).flatten()
-
-    return np.mean(predictions == labels)
+    return np.mean(accuracies)
 
 def compute_adapted_frame_accuracy(meta, generator, num_batches):
-    predictions = []
-    labels = []
-
+    accuracies = []
     for i in range(num_batches):
         x, y = next(generator)
 
-        predictions.append(np.argmax(meta.predict(x), axis=-1))
-        labels.append(y)
+        predictions = np.argmax(meta.predict(x), axis=-1)
+        accuracies.append(np.mean(predictions.flatten() == y.flatten()))
 
-    predictions = np.concatenate(predictions).flatten()
-    labels = np.concatenate(labels).flatten()
-
-    return np.mean(predictions == labels)
-
+    return np.mean(accuracies)
 
 def load_acoustic_model(path, adaptation_type="ALL"):
     custom_objects = {
@@ -97,13 +87,11 @@ if __name__ == '__main__':
     params = get_model_weights(model)
     num_train_batches, train_generator, num_val_batches, val_generator = load_data(
         params, feats, utt2spk, adapt_pdfs, test_pdfs,
-        validation_speakers=5,
         subsampling_factor=subsampling_factor,
         left_context=left_context,
         right_context=right_context,
         return_sequences=return_sequences)
 
-    print "Frame accuracy on train is: %.4f" % compute_frame_accuracy(model, train_generator, num_train_batches)
     print "Frame accuracy on val is: %.4f" % compute_frame_accuracy(model, val_generator, num_val_batches)
 
     meta.fit_generator(
