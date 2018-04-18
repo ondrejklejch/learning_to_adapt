@@ -8,6 +8,13 @@ from keras.optimizers import Adam
 from learning_to_adapt.model import create_meta_learner, create_model_wrapper, get_model_weights, FeatureTransform, LHUC, Renorm
 from learning_to_adapt.utils import load_data
 
+import keras
+import tensorflow as tf
+
+config = tf.ConfigProto()
+config.intra_op_parallelism_threads=1
+config.inter_op_parallelism_threads=1
+keras.backend.tensorflow_backend.set_session(tf.Session(config=config))
 
 
 def compute_frame_accuracy(model, generator, num_batches):
