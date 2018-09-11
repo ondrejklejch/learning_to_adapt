@@ -174,6 +174,13 @@ def create_model(definition, components, subsampling_factor, with_lhuc_layers):
             else:
                 raise ValueError("Unable to optimize graph.")
 
+        is_renorm = current_node["type"] == "renorm"
+        is_activation = current_node["type"] == "activation" and current_node["activation"] not in ["linear", "softmax"] and graph[-1][1]["type"] != "renorm"
+        if (is_renorm or is_activation) and with_lhuc_layers:
+            graph.append((node_name, {
+                "type": "LHUC"
+            }))
+
         graph.append((node_name, current_node))
         node_name = current_node["input"]
 
@@ -188,9 +195,6 @@ def create_model(definition, components, subsampling_factor, with_lhuc_layers):
                 definition["activation"] = "softmax"
 
             model.add(Activation(definition["activation"], name=node_name))
-
-            if definition["activation"] not in ["linear", "softmax"] and with_lhuc_layers:
-                model.add(LHUC(name="lhuc.%s" % node_name))
         elif definition["type"] == "affine":
             weights = components[definition["name"]]
             filters = weights[1].shape[0]
@@ -214,6 +218,8 @@ def create_model(definition, components, subsampling_factor, with_lhuc_layers):
             size = filters
         elif definition["type"] == "renorm":
             model.add(Renorm(name=node_name))
+        elif definition["type"] == "LHUC":
+            model.add(LHUC(name="lhuc.%s" % node_name))
 
     return model, left_context, right_context
 
