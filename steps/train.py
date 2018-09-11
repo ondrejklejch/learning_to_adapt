@@ -6,7 +6,7 @@ from keras.models import load_model
 from keras.optimizers import Adam
 
 from learning_to_adapt.model import create_meta_learner, create_model_wrapper, get_model_weights, FeatureTransform, LHUC, Renorm
-from learning_to_adapt.utils import load_data
+from learning_to_adapt.utils import load_data_for_metalearner
 
 import keras
 import tensorflow as tf
@@ -92,7 +92,7 @@ if __name__ == '__main__':
     meta.summary()
 
     params = get_model_weights(model)
-    num_train_batches, train_generator, num_val_batches, val_generator = load_data(
+    num_train_batches, train_generator, num_val_batches, val_generator = load_data_for_metalearner(
         params, feats, utt2spk, adapt_pdfs, test_pdfs,
         subsampling_factor=subsampling_factor,
         left_context=left_context,

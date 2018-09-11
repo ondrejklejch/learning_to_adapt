@@ -8,7 +8,7 @@ import collections
 SILENCE_PDFS = set([0,41,43,60,118])
 
 
-def load_data(params, feats, utt2spk, adapt_pdfs, test_pdfs, num_frames=1000, shift=500, chunk_size=50, subsampling_factor=1, left_context=0, right_context=0, adaptation_steps=1, return_sequences=False, validation_speakers=0.1):
+def load_data_for_metalearner(params, feats, utt2spk, adapt_pdfs, test_pdfs, num_frames=1000, shift=500, chunk_size=50, subsampling_factor=1, left_context=0, right_context=0, adaptation_steps=1, return_sequences=False, validation_speakers=0.1):
     if subsampling_factor != 1:
         raise ValueError('Data generator works only with subsampling_factor=1')
 
