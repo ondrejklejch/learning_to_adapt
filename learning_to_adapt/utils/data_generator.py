@@ -4,9 +4,6 @@ import random
 import kaldi_io
 import collections
 
-# TDNN
-SILENCE_PDFS = set([0,41,43,60,118])
-
 
 def load_data_for_metalearner(params, feats, utt2spk, adapt_pdfs, test_pdfs, num_frames=1000, shift=500, chunk_size=50, subsampling_factor=1, left_context=0, right_context=0, adaptation_steps=1, return_sequences=False, validation_speakers=0.1):
     if subsampling_factor != 1:
@@ -86,7 +83,7 @@ def create_chunks_per_spk(utts_per_spk, chunk_size, subsampling_factor, left_con
     return chunks_per_spk
 
 def create_chunks(feats, adapt_pdfs, test_pdfs, chunk_size, left_context, right_context, subsampling_factor):
-    start, end = trim_silence(test_pdfs)
+    start, end = 0, test_pdfs.shape[0] - 1
     if end - start < 2 * chunk_size:
         return []
 
@@ -96,10 +93,7 @@ def create_chunks(feats, adapt_pdfs, test_pdfs, chunk_size, left_context, right_
         chunk_feats = feats[offset:offset + chunk_size + right_context - left_context]
         chunk_adapt_pdfs = adapt_pdfs[offset:offset + chunk_size]
         chunk_test_pdfs = test_pdfs[offset:offset + chunk_size]
-
-        num_silent_phones = len([x for x in chunk_test_pdfs.flatten() if x in SILENCE_PDFS])
-        if num_silent_phones <= chunk_size * 0.1:
-            chunks.append((chunk_feats, chunk_adapt_pdfs, chunk_test_pdfs))
+        chunks.append((chunk_feats, chunk_adapt_pdfs, chunk_test_pdfs))
 
     return chunks
 
@@ -113,18 +107,6 @@ def pad_feats(feats, left_context, right_context):
     padded_feats[-left_context:-right_context,:] = feats
 
     return padded_feats
-
-def trim_silence(pdfs):
-    pdfs = pdfs.flatten()
-    for start in range(pdfs.shape[0]):
-        if pdfs[start] not in SILENCE_PDFS:
-            break
-
-    for end in reversed(range(pdfs.shape[0])):
-        if pdfs[end] not in SILENCE_PDFS:
-            break
-
-    return start, end
 
 def get_offsets(start, end, window):
     length = end - start
