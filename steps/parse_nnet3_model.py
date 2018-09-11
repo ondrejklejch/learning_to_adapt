@@ -184,6 +184,7 @@ def create_model(definition, components, subsampling_factor, with_lhuc_layers):
         graph.append((node_name, current_node))
         node_name = current_node["input"]
 
+    print "model = Sequential()"
     model = Sequential()
     left_context = 0
     right_context = 0
@@ -194,6 +195,7 @@ def create_model(definition, components, subsampling_factor, with_lhuc_layers):
             if node_name == "output":
                 definition["activation"] = "softmax"
 
+            print 'model.add(Activation("%s", name="%s")' % (definition["activation"], node_name)
             model.add(Activation(definition["activation"], name=node_name))
         elif definition["type"] == "affine":
             weights = components[definition["name"]]
@@ -208,6 +210,10 @@ def create_model(definition, components, subsampling_factor, with_lhuc_layers):
             kernel = weights[0].T.reshape((kernel_size, size, filters))
             bias = weights[1]
 
+            print 'model.add(Conv1D(%d, %d, strides=%d, padding="%s", dilation_rate=%d, use_bias=True, input_shape=(None, %d), name="%s"))' % (
+                filters, kernel_size, strides, padding, dilation_rate, size, node_name
+            )
+
             model.add(Conv1D(
                 filters, kernel_size, strides=strides, padding=padding,
                 dilation_rate=dilation_rate, use_bias=True,
@@ -217,8 +223,10 @@ def create_model(definition, components, subsampling_factor, with_lhuc_layers):
 
             size = filters
         elif definition["type"] == "renorm":
+            print 'model.add(Renorm(name="%s")' % (node_name)
             model.add(Renorm(name=node_name))
         elif definition["type"] == "LHUC":
+            print 'model.add(LHUC(name="lhuc.%s")' % (node_name)
             model.add(LHUC(name="lhuc.%s" % node_name))
 
     return model, left_context, right_context
