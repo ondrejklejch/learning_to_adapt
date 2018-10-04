@@ -2,6 +2,7 @@ import itertools
 import json
 import math
 from signal import signal, SIGPIPE, SIG_DFL
+import os
 import sys
 
 import numpy as np
@@ -11,6 +12,7 @@ import tensorflow as tf
 
 from learning_to_adapt.model import FeatureTransform, LHUC, Renorm
 from learning_to_adapt.utils import pad_feats
+from learning_to_adapt.optimizers import AdamW
 
 config = tf.ConfigProto()
 config.intra_op_parallelism_threads=1
@@ -25,15 +27,27 @@ if __name__ == '__main__':
     left_context = int(sys.argv[4])
     right_context = int(sys.argv[5])
 
+    if len(sys.argv) > 6:
+        apply_exp = bool(sys.argv[6])
+    else:
+        apply_exp = False
+
     if not model.endswith('.h5'):
         raise TypeError ('Unsupported model type. Please use h5 format. Update Keras if needed')
 
     ## Load model
-    m = keras.models.load_model(model, custom_objects={'FeatureTransform': FeatureTransform, 'LHUC': LHUC, 'Renorm': Renorm})
+    m = keras.models.load_model(model, custom_objects={
+        'FeatureTransform': FeatureTransform,
+        'LHUC': LHUC,
+        'Renorm': Renorm,
+        'AdamW': AdamW})
 
-    with open(counts, 'r') as f:
-        counts = np.fromstring(f.read().strip(" []"), dtype='float32', sep=' ')
-	priors = counts / np.sum(counts)
+    if os.path.isfile(counts):
+        with open(counts, 'r') as f:
+            counts = np.fromstring(f.read().strip(" []"), dtype='float32', sep=' ')
+        priors = counts / np.sum(counts)
+    else:
+        priors = 1
 
     with kaldi_io.SequentialBaseFloatMatrixReader("ark:-") as arkIn, \
             kaldi_io.BaseFloatMatrixWriter("ark,t:-") as arkOut:
@@ -44,4 +58,8 @@ if __name__ == '__main__':
 
             logProbMat = np.log(m.predict(feats)[0] / priors)
             logProbMat[logProbMat == -np.inf] = -100
-            arkOut.write(utt, logProbMat)
+
+            if apply_exp:
+                arkOut.write(utt, np.exp(logProbMat))
+            else:
+                arkOut.write(utt, logProbMat)
