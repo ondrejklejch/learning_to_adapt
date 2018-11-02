@@ -38,11 +38,14 @@ def load_dataset(feats_dir, utt2spk_rspecifier, pdfs_rspecifier, chunk_size, sub
 
         return np.array(feats, dtype=np.float32), np.array(pdfs, dtype=np.int32)
 
+    def _reshape_fn(x, y):
+        return tf.reshape(x, [-1, chunk_size - left_context + right_context, 40]), tf.reshape(y, [-1, chunk_size, 1])
+
     dataset = tf.data.Dataset.list_files("%s/feats_*.scp" % feats_dir)
     dataset = dataset.map(lambda path: tf.py_func(_map_fn, [path], [tf.float32, tf.int32]))
+    dataset = dataset.map(_reshape_fn)
     dataset = dataset.apply(tf.contrib.data.unbatch())
-    dataset = dataset.shuffle(10000)
-    dataset = dataset.repeat()
+    dataset = dataset.apply(tf.contrib.data.shuffle_and_repeat(10000))
 
     return dataset
 
