@@ -3,37 +3,49 @@ import numpy as np
 import random
 import kaldi_io
 import collections
+import tensorflow as tf
 
 
-def load_data(feats_rspecifier, utt2spk_rspecifier, pdfs_rspecifier, chunk_size=8, subsampling_factor=1, left_context=0, right_context=0):
+def load_dataset(feats_dir, utt2spk_rspecifier, pdfs_rspecifier, chunk_size, subsampling_factor=1, left_context=0, right_context=0):
     if subsampling_factor != 1:
         raise ValueError('Data generator works only with subsampling_factor=1')
 
     utt_to_pdfs = load_utt_to_pdfs(pdfs_rspecifier)
     utt_to_spk = load_utt_to_spk(utt2spk_rspecifier)
-    feats_reader = kaldi_io.SequentialBaseFloatMatrixReader(feats_rspecifier)
 
-    feats = []
-    pdfs = []
-    for (utt, utt_feats) in feats_reader:
-        if utt not in utt_to_pdfs:
-            continue
+    def _map_fn(path):
+        feats_reader = kaldi_io.SequentialBaseFloatMatrixReader("scp:%s" % path)
 
-        spk = utt_to_spk[utt]
-        utt_pdfs = utt_to_pdfs[utt]
+        feats = []
+        pdfs = []
+        for (utt, utt_feats) in feats_reader:
+            if utt not in utt_to_pdfs:
+                continue
 
-        utt_subsampled_length = utt_feats.shape[0] / subsampling_factor
-        if abs(utt_subsampled_length - utt_pdfs.shape[0]) > 1:
-            continue
+            spk = utt_to_spk[utt]
+            utt_pdfs = utt_to_pdfs[utt]
 
-        utt_feats = utt_feats[:utt_subsampled_length * subsampling_factor]
-        utt_pdfs = utt_pdfs[:utt_subsampled_length]
-        chunks = create_chunks(utt_feats, utt_pdfs, utt_pdfs, chunk_size, left_context, right_context, subsampling_factor)
+            utt_subsampled_length = utt_feats.shape[0] / subsampling_factor
+            if abs(utt_subsampled_length - utt_pdfs.shape[0]) > 1:
+                continue
 
-        feats.extend([chunk[0] for chunk in chunks])
-        pdfs.extend([chunk[1] for chunk in chunks])
+            utt_feats = utt_feats[:utt_subsampled_length * subsampling_factor]
+            utt_pdfs = utt_pdfs[:utt_subsampled_length]
+            chunks = create_chunks(utt_feats, utt_pdfs, utt_pdfs, chunk_size, left_context, right_context, subsampling_factor)
 
-    return np.array(feats), np.array(pdfs)
+            feats.extend([chunk[0] for chunk in chunks])
+            pdfs.extend([chunk[1] for chunk in chunks])
+
+        return np.array(feats, dtype=np.float32), np.array(pdfs, dtype=np.int32)
+
+    dataset = tf.data.Dataset.list_files("%s/feats_*.scp" % feats_dir)
+    dataset = dataset.map(lambda path: tf.py_func(_map_fn, [path], [tf.float32, tf.int32]))
+    dataset = dataset.apply(tf.contrib.data.unbatch())
+    dataset = dataset.shuffle(10000)
+    dataset = dataset.repeat()
+
+    return dataset
+
 
 def load_data_for_metalearner(params, feats, utt2spk, adapt_pdfs, test_pdfs, num_frames=1000, shift=500, chunk_size=50, subsampling_factor=1, left_context=0, right_context=0, adaptation_steps=1, return_sequences=False, validation_speakers=0.1):
     if subsampling_factor != 1:
