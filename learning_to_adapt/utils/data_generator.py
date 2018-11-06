@@ -14,12 +14,13 @@ def load_dataset(feats_dir, utt_to_spk, utt_to_pdfs, chunk_size, subsampling_fac
         feats_reader = kaldi_io.SequentialBaseFloatMatrixReader("scp:%s" % path)
 
         feats = []
+        spks = []
         pdfs = []
         for (utt, utt_feats) in feats_reader:
             if utt not in utt_to_pdfs:
                 continue
 
-            spk = utt_to_spk[utt]
+            spk = utt_to_spk[utt] if random.random() < 0.5 else 0
             utt_pdfs = utt_to_pdfs[utt]
 
             utt_subsampled_length = utt_feats.shape[0] / subsampling_factor
@@ -31,15 +32,20 @@ def load_dataset(feats_dir, utt_to_spk, utt_to_pdfs, chunk_size, subsampling_fac
             chunks = create_chunks(utt_feats, utt_pdfs, utt_pdfs, chunk_size, left_context, right_context, subsampling_factor)
 
             feats.extend([chunk[0] for chunk in chunks])
+            spks.extend([spk for chunk in chunks])
             pdfs.extend([chunk[1] for chunk in chunks])
 
-        return np.array(feats, dtype=np.float32), np.array(pdfs, dtype=np.int32)
+        return np.array(feats, dtype=np.float32), np.array(spks, dtype=np.int32), np.array(pdfs, dtype=np.int32)
 
-    def _reshape_fn(x, y):
-        return tf.reshape(x, [-1, chunk_size - left_context + right_context, 40]), tf.reshape(y, [-1, chunk_size, 1])
+    def _reshape_fn(x, y, z):
+        return (
+            tf.reshape(x, [-1, chunk_size - left_context + right_context, 40]),
+            tf.reshape(y, [-1, 1]),
+            tf.reshape(z, [-1, chunk_size, 1])
+        )
 
     dataset = tf.data.Dataset.list_files("%s/feats_*.scp" % feats_dir)
-    dataset = dataset.map(lambda path: tf.py_func(_map_fn, [path], [tf.float32, tf.int32]))
+    dataset = dataset.map(lambda path: tf.py_func(_map_fn, [path], [tf.float32, tf.int32, tf.int32]))
     dataset = dataset.map(_reshape_fn)
     dataset = dataset.apply(tf.contrib.data.unbatch())
     dataset = dataset.apply(tf.contrib.data.shuffle_and_repeat(10000))
