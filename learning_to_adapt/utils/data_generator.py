@@ -6,12 +6,9 @@ import collections
 import tensorflow as tf
 
 
-def load_dataset(feats_dir, utt2spk_rspecifier, pdfs_rspecifier, chunk_size, subsampling_factor=1, left_context=0, right_context=0):
+def load_dataset(feats_dir, utt_to_spk, utt_to_pdfs, chunk_size, subsampling_factor=1, left_context=0, right_context=0):
     if subsampling_factor != 1:
         raise ValueError('Data generator works only with subsampling_factor=1')
-
-    utt_to_pdfs = load_utt_to_pdfs(pdfs_rspecifier)
-    utt_to_spk = load_utt_to_spk(utt2spk_rspecifier)
 
     def _map_fn(path):
         feats_reader = kaldi_io.SequentialBaseFloatMatrixReader("scp:%s" % path)

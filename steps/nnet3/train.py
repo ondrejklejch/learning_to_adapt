@@ -83,12 +83,15 @@ if __name__ == '__main__':
     batch_size = 256
     learning_rate = 0.0015
 
-    train_dataset = load_dataset(train_data, utt2spk, pdfs, chunk_size=8, subsampling_factor=1, left_context=left_context, right_context=right_context)
+    utt_to_spk = load_utt_to_spk(utt2spk)
+    utt_to_pdfs = load_utt_to_pdfs(pdfs)
+
+    train_dataset = load_dataset(train_data, utt_to_spk, utt_to_pdfs, chunk_size=8, subsampling_factor=1, left_context=left_context, right_context=right_context)
     train_dataset = train_dataset.batch(batch_size, drop_remainder=True)
     train_dataset = train_dataset.prefetch(1024)
     x, y = train_dataset.make_one_shot_iterator().get_next()
 
-    val_dataset = load_dataset(val_data, utt2spk, pdfs, chunk_size=8, subsampling_factor=1, left_context=left_context, right_context=right_context)
+    val_dataset = load_dataset(val_data, utt_to_spk, utt_to_pdfs, chunk_size=8, subsampling_factor=1, left_context=left_context, right_context=right_context)
     val_dataset = val_dataset.batch(batch_size, drop_remainder=True)
     val_dataset = val_dataset.take(512).cache().repeat()
     val_x, val_y = val_dataset.make_one_shot_iterator().get_next()
