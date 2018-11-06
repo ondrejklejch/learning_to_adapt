@@ -2,13 +2,12 @@ import sys
 import numpy as np
 
 from keras.callbacks import ModelCheckpoint, CSVLogger, LearningRateScheduler
-from keras.models import load_model, Sequential
-from keras.layers import Activation, Conv1D, BatchNormalization
+from keras.models import Model
+from keras.layers import Input, Activation, Conv1D
 from keras.optimizers import Adam
 
 from learning_to_adapt.model import LHUC, Renorm
-from learning_to_adapt.utils import load_dataset
-from learning_to_adapt.optimizers import AdamW
+from learning_to_adapt.utils import load_dataset, load_utt_to_spk, load_utt_to_pdfs, load_lda
 
 import keras
 import tensorflow as tf
@@ -19,55 +18,24 @@ config.inter_op_parallelism_threads=1
 keras.backend.tensorflow_backend.set_session(tf.Session(config=config))
 
 
-def load_lda(path):
-    rows = []
-    with open(path, 'r') as f:
-        for line in f:
-            line = line.strip(" []\n")
-
-            if line:
-                rows.append(np.fromstring(line, dtype=np.float32, sep=' '))
-
-    matrix = np.array(rows).T
-
-    return matrix[:-1], matrix[-1]
-
-
 def create_model(hidden_dim=350, lda_path=None):
     lda, bias = load_lda(lda_path)
     lda = lda.reshape((5, 40, 200))
 
-    model = Sequential()
-    model.add(Conv1D(200, 5, strides=1, padding="valid", dilation_rate=1, use_bias=True, input_shape=(None, 40), name="lda", trainable=False, weights=[lda, bias]))
-    model.add(Conv1D(hidden_dim, 1, strides=1, padding="valid", dilation_rate=1, use_bias=True, input_shape=(None, 200), name="tdnn1.affine"))
-    model.add(Activation("relu", name="tdnn1.relu"))
-    model.add(BatchNormalization(name="tdnn1.batchnorm"))
-    model.add(LHUC(name="lhuc.tdnn1.batchnorm", trainable=False))
-    model.add(Conv1D(hidden_dim, 2, strides=1, padding="valid", dilation_rate=3, use_bias=True, name="tdnn2.affine"))
-    model.add(Activation("relu", name="tdnn2.relu"))
-    model.add(BatchNormalization(name="tdnn2.batchnorm"))
-    model.add(LHUC(name="lhuc.tdnn2.batchnorm", trainable=False))
-    model.add(Conv1D(hidden_dim, 2, strides=1, padding="valid", dilation_rate=6, use_bias=True, name="tdnn3.affine"))
-    model.add(Activation("relu", name="tdnn3.relu"))
-    model.add(BatchNormalization(name="tdnn3.batchnorm"))
-    model.add(LHUC(name="lhuc.tdnn3.batchnorm", trainable=False))
-    model.add(Conv1D(hidden_dim, 2, strides=1, padding="valid", dilation_rate=9, use_bias=True, name="tdnn4.affine"))
-    model.add(Activation("relu", name="tdnn4.relu"))
-    model.add(BatchNormalization(name="tdnn4.batchnorm"))
-    model.add(LHUC(name="lhuc.tdnn4.batchnorm", trainable=False))
-    model.add(Conv1D(hidden_dim, 2, strides=1, padding="valid", dilation_rate=6, use_bias=True, name="tdnn5.affine"))
-    model.add(Activation("relu", name="tdnn5.relu"))
-    model.add(BatchNormalization(name="tdnn5.batchnorm"))
-    model.add(LHUC(name="lhuc.tdnn5.batchnorm", trainable=False))
-    model.add(Conv1D(hidden_dim, 1, strides=1, padding="valid", dilation_rate=1, use_bias=True, name="tdnn6.affine"))
-    model.add(Activation("relu", name="tdnn6.relu"))
-    model.add(BatchNormalization(name="tdnn6.batchnorm"))
-    model.add(LHUC(name="lhuc.tdnn6.batchnorm", trainable=False))
-    model.add(Conv1D(4208, 1, strides=1, padding="valid", dilation_rate=1, use_bias=True, name="output.affine"))
-    model.add(Activation("linear", name="output.log-softmax"))
-    model.add(Activation("softmax", name="output"))
+    feats = Input(shape=(None, 40))
+    x = Conv1D(200, kernel_size=5, name="lda", trainable=False, weights=[lda, bias])(feats)
 
-    return model
+    layers = [(1, 1), (2, 3), (2, 6), (2, 9), (2, 6), (1, 1)]
+    for i, (kernel_size, dilation_rate) in enumerate(layers):
+        name = "tdnn%d" % (i + 1)
+        x = Conv1D(hidden_dim, kernel_size=kernel_size, dilation_rate=dilation_rate, activation="relu", name="%s.affine" % name)(x)
+        x = Renorm(name="%s.renorm" % name)(x)
+        x = LHUC(name="lhuc.%s" % name, trainable=False)(x)
+
+    y = Conv1D(4208, kernel_size=1, activation="softmax", name="output.affine")(x)
+
+    return Model(inputs=[feats], outputs=[y])
+
 
 if __name__ == '__main__':
     train_data = sys.argv[1]
@@ -89,12 +57,12 @@ if __name__ == '__main__':
     train_dataset = load_dataset(train_data, utt_to_spk, utt_to_pdfs, chunk_size=8, subsampling_factor=1, left_context=left_context, right_context=right_context)
     train_dataset = train_dataset.batch(batch_size, drop_remainder=True)
     train_dataset = train_dataset.prefetch(1024)
-    x, y = train_dataset.make_one_shot_iterator().get_next()
+    x, _, y = train_dataset.make_one_shot_iterator().get_next()
 
     val_dataset = load_dataset(val_data, utt_to_spk, utt_to_pdfs, chunk_size=8, subsampling_factor=1, left_context=left_context, right_context=right_context)
     val_dataset = val_dataset.batch(batch_size, drop_remainder=True)
     val_dataset = val_dataset.take(512).cache().repeat()
-    val_x, val_y = val_dataset.make_one_shot_iterator().get_next()
+    val_x, _, val_y = val_dataset.make_one_shot_iterator().get_next()
 
     model = create_model(850, lda_path)
     model.compile(
