@@ -7,26 +7,29 @@
 export CUDA_VISIBLE_DEVICES=2
 export TF_CPP_MIN_LOG_LEVEL=2
 
-ali="exp/kaldi_tdnn_subset/align_train_cleaned_hires_split_01/"
+ali="exp/tri3_cleaned_ali_train_cleaned_sp_comb/"
 
-data="data/train_cleaned_hires_split_01/"
+data="data/train_cleaned_sp_hires_comb/"
 utt2spk=$data/utt2spk
 pdfs="ark:ali-to-pdf $ali/final.mdl ark:'gunzip -c $ali/ali.*.gz |' ark,t:- |"
 left_context=-16
 right_context=12
 lda="lda.txt"
-output="exp/tdnn_am_850_dataset_api/"
-
+output="exp/tdnn_am_850_batchnorm/"
 
 num_splits=1000
 if [ ! -d $data/keras_train_split ]; then
     mkdir $data/keras_train_split
 
-    sort -R $data/feats.scp > $data/keras_train_split/feats.scp
+    sort -R $data/feats.scp > $data/keras_train_split/all_feats.scp
+    tail -n +301 $data/keras_train_split/all_feats.scp > $data/keras_train_split/feats.scp
     split --additional-suffix .scp --numeric-suffixes -n l/$num_splits -a 4 $data/keras_train_split/feats.scp $data/keras_train_split/feats_
 
     mkdir $data/keras_val_split
-    mv $data/keras_train_split/feats_09*.scp $data/keras_val_split
+    head -n 300 $data/keras_train_split/all_feats.scp > $data/keras_val_split/feats.scp
+    split --additional-suffix .scp --numeric-suffixes -n l/10 -a 4 $data/keras_val_split/feats.scp $data/keras_val_split/feats_
+
+    rm $data/keras_train_split/all_feats.scp
 fi
 
 

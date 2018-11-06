@@ -1,7 +1,7 @@
 import sys
 import numpy as np
 
-from keras.callbacks import ModelCheckpoint, CSVLogger, ReduceLROnPlateau
+from keras.callbacks import ModelCheckpoint, CSVLogger, LearningRateScheduler
 from keras.models import load_model, Sequential
 from keras.layers import Activation, Conv1D, BatchNormalization
 from keras.optimizers import Adam
@@ -33,7 +33,7 @@ def load_lda(path):
     return matrix[:-1], matrix[-1]
 
 
-def create_model(hidden_dim=350, lda_path):
+def create_model(hidden_dim=350, lda_path=None):
     lda, bias = load_lda(lda_path)
     lda = lda.reshape((5, 40, 200))
 
@@ -79,7 +79,10 @@ if __name__ == '__main__':
     lda_path = sys.argv[7]
     output_path = sys.argv[8]
 
+    num_epochs = 400
     batch_size = 256
+    learning_rate = 0.0015
+
     train_dataset = load_dataset(train_data, utt2spk, pdfs, chunk_size=8, subsampling_factor=1, left_context=left_context, right_context=right_context)
     train_dataset = train_dataset.batch(batch_size, drop_remainder=True)
     train_dataset = train_dataset.prefetch(1024)
@@ -87,26 +90,27 @@ if __name__ == '__main__':
 
     val_dataset = load_dataset(val_data, utt2spk, pdfs, chunk_size=8, subsampling_factor=1, left_context=left_context, right_context=right_context)
     val_dataset = val_dataset.batch(batch_size, drop_remainder=True)
-    val_dataset = val_dataset.take(1024).cache().repeat()
+    val_dataset = val_dataset.take(512).cache().repeat()
     val_x, val_y = val_dataset.make_one_shot_iterator().get_next()
 
     model = create_model(850, lda_path)
     model.compile(
         loss='sparse_categorical_crossentropy',
         metrics=['accuracy'],
-        optimizer=Adam(lr=0.0005, amsgrad=True, clipvalue=1.)
+        optimizer=Adam(lr=learning_rate, amsgrad=True, clipvalue=1.)
     )
 
     callbacks=[
-        CSVLogger(output_path + ".csv"),
-        ModelCheckpoint(filepath=output_path + "model.{epoch:02d}.h5", save_best_only=False),
+        CSVLogger(output_path + "model.csv"),
+        ModelCheckpoint(filepath=output_path + "model.{epoch:02d}.h5", save_best_only=False, period=10),
         ModelCheckpoint(filepath=output_path + "model.best.h5", save_best_only=True),
+        LearningRateScheduler(lambda epoch, lr: learning_rate - epoch * (learning_rate - learning_rate / 10) / num_epochs, verbose=0)
     ]
 
     model.fit(x, y,
         steps_per_epoch=2000,
-        epochs=400,
+        epochs=num_epochs,
         validation_data=(val_x, val_y),
-        validation_steps=1024,
+        validation_steps=512,
         callbacks=callbacks
     )
