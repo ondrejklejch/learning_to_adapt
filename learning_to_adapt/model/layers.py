@@ -51,3 +51,12 @@ class FeatureTransform(Layer):
 
   def compute_output_shape(self, input_shape):
     return input_shape
+
+
+class Multiply(Layer):
+
+  def call(self, inputs):
+    return inputs[0] * inputs[1]
+
+  def compute_output_shape(self, input_shapes):
+    return input_shapes[0]
