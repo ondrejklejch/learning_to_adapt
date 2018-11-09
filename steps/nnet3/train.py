@@ -71,7 +71,7 @@ if __name__ == '__main__':
         optimizer=Adam(lr=learning_rate, amsgrad=True, clipvalue=1.)
     )
 
-    callbacks=[
+    callbacks = [
         CSVLogger(output_path + "model.csv"),
         ModelCheckpoint(filepath=output_path + "model.{epoch:02d}.h5", save_best_only=False, period=10),
         ModelCheckpoint(filepath=output_path + "model.best.h5", save_best_only=True),

@@ -11,21 +11,13 @@ from loop import rnn
 from wrapper import ModelWrapper, create_model_wrapper
 
 
-def create_meta_learner(wrapper, units=20, meta_learner_type='full', input_type='frames', l1=0.001):
+def create_meta_learner(wrapper, units=20, meta_learner_type='full'):
   feat_dim = wrapper.feat_dim
   num_params = wrapper.num_params
 
-  if input_type == 'frames':
-    training_feats = Input(shape=(None, None, feat_dim,))
-    training_labels = Input(shape=(None, None, 1,))
-    testing_feats = Input(shape=(None, feat_dim,))
-  elif input_type == 'sequences':
-    training_feats = Input(shape=(None, None, None, feat_dim,))
-    training_labels = Input(shape=(None, None, None, 1,))
-    testing_feats = Input(shape=(None, None, feat_dim,))
-  else:
-    raise ValueError('Undefined input type: %s' % input_type)
-
+  training_feats = Input(shape=(None, None, None, feat_dim,))
+  training_labels = Input(shape=(None, None, None, 1,))
+  testing_feats = Input(shape=(None, None, feat_dim,))
   params = Input(shape=(num_params,))
 
   if meta_learner_type == 'lr_per_layer':
@@ -37,8 +29,6 @@ def create_meta_learner(wrapper, units=20, meta_learner_type='full', input_type=
 
   new_params = meta_learner([training_feats, training_labels, params])
   predictions = wrapper([new_params, testing_feats])
-
-  meta_learner.add_loss(l1 * K.sum(K.abs(new_params - params)))
 
   return Model(
     inputs=[params, training_feats, training_labels, testing_feats],
@@ -264,7 +254,7 @@ class LearningRatePerLayerMetaLearner(Layer):
     self.learning_rate = self.add_weight(
       shape=(self.num_param_groups, 1),
       name='learning_rate',
-      initializer='zeros'
+      initializer=Constant(0.001),
     )
 
   def call(self, inputs):
@@ -279,11 +269,11 @@ class LearningRatePerLayerMetaLearner(Layer):
       initial_states=self.get_initital_state(trainable_params),
     )
 
-    new_params = K.reshape(last_output[0], (1, self.wrapper.num_trainable_params))
+    new_params = K.transpose(last_output[0])
     return self.wrapper.merge_params(self.params, new_params)
 
   def get_initital_state(self, params):
-    return  [K.reshape(params, (self.num_trainable_params, 1))]
+    return  [K.transpose(params)]
 
   def compute_output_shape(self, input_shape):
     return input_shape[2]

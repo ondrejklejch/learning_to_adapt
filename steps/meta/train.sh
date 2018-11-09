@@ -7,18 +7,31 @@
 export CUDA_VISIBLE_DEVICES=2
 export TF_CPP_MIN_LOG_LEVEL=2
 
-adapt_ali="exp/dnn_256-7-small_softmax-dbn_dnn/decode_dev2010/ali/"
-test_ali="exp/dnn_256-7-small_softmax-dbn_dnn/align_dev2010/"
-data="data/dev2010/"
-model="exp/model/final.mdl"
 
-keras_model="exp/model_with_lhuc/dnn.nnet.h5"
-feats="ark,s,cs:apply-cmvn --norm-vars=true --utt2spk=ark:$data/utt2spk scp:$data/cmvn.scp scp:$data/feats.scp ark:- 2> /dev/null |"
-feats="$feats add-deltas ark:- ark:- 2> /dev/null |"
-feats="$feats splice-feats --left-context=3 --right-context=3 ark:- ark:- 2> /dev/null |"
-utt2spk=$data/utt2spk
+dset="dev2010-2012"
+adaptation_type="sup"
+model_dir="exp/tdnn_am_850_renorm/"
+
+# Obtain alignments for adaptation
+if [ $adaptation_type == "sup" ]; then
+    adapt_ali="exp/kaldi_tdnn/align_$dset/"
+else
+    adapt_ali="exp/kaldi_tdnn/decode_$dset/ali/"
+fi
+test_ali="exp/kaldi_tdnn/align_$dset/"
+model="exp/kaldi_tdnn/final.mdl"
 adapt_pdfs="ark:ali-to-pdf $model ark:'gunzip -c $adapt_ali/ali.*.gz |' ark,t:- |"
 test_pdfs="ark:ali-to-pdf $model ark:'gunzip -c $test_ali/ali.*.gz |' ark,t:- |"
-output="exp/meta_unsupervised.h5"
 
-python2.7 steps/train.py $keras_model "$feats" $utt2spk "$adapt_pdfs" "$test_pdfs" ALL $output
+frame_subsampling_factor=1
+context_opts="-16 12"
+
+# Prepare training data splits
+data="data/${dset}_hires/"
+if [ ! -d $data/keras_meta_train_split ]; then
+    mkdir -p $data/keras_meta_{train,val}_split
+    python2.7 steps/split_feats_by_spk.py $data/feats.scp $data/keras_meta_train_split $data/keras_meta_val_split 5
+fi
+
+mkdir -p $model_dir/meta_$adaptation_type
+python2.7 steps/meta/train.py $model_dir/model.best.h5 $data/keras_meta_train_split $data/keras_meta_val_split "$adapt_pdfs" "$test_pdfs" ALL $model_dir/meta_$adaptation_type $frame_subsampling_factor $context_opts
