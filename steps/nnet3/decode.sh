@@ -41,5 +41,5 @@ lat_wspecifier="ark:| gzip -c > $decode_dir/lat.JOB.gz"
 $cmd JOB=1:$num_spks $decode_dir/log/decode.JOB.log \
   latgen-faster-mapped $decode_opts --word-symbol-table=$graph_dir/words.txt $model_dir/final.mdl $graph_dir/HCLG.fst "$feats" "$lat_wspecifier"
 
-bash local/score.sh --stm $data/stm $data $graph_dir $decode_dir
-cat $decode_dir/scoring_ted/best_wer
+bash local/score.sh $data $graph_dir $decode_dir
+grep "Percent Total Error" $decode_dir/score_*/*.dtl | sort -k 5,5nr | tail -n 1

@@ -32,15 +32,19 @@ def adapt(model, method, config, x, y):
 
 def adapt_all(model, config, x, y):
     model.compile(loss='sparse_categorical_crossentropy', optimizer=keras.optimizers.SGD(lr=2.5e-5))
-    model.fit(x, y, batch_size=256, epochs=3, verbose=0)
+    model.fit(x, y, batch_size=1024, epochs=3, verbose=0)
 
 
 def adapt_lhuc(model, config, x, y):
+    model.trainable = True
     for l in model.layers:
         l.trainable = l.name.startswith('lhuc')
 
+        if l.name.startswith('lhuc'):
+            l.trainable_weights = l.weights
+
     model.compile(loss='sparse_categorical_crossentropy', optimizer=keras.optimizers.SGD(lr=0.7))
-    model.fit(x, y, batch_size=256, epochs=3, verbose=0)
+    model.fit(x, y, batch_size=1024, epochs=3, verbose=0)
 
 
 def adapt_meta(model, config, x, y):
@@ -95,6 +99,9 @@ if __name__ == '__main__':
         utt_buffer = []
         for utt, feats in arkIn:
             utt_buffer.append((utt, feats))
+
+            if utt not in utt_to_pdfs:
+                continue
 
             pdfs = utt_to_pdfs[utt]
             chunks.extend(create_chunks(feats, pdfs, pdfs, chunk_size, left_context, right_context, frame_subsampling_factor))
