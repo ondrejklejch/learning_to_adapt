@@ -114,7 +114,7 @@ def reshape_params(shapes, params):
 
   for shape in shapes:
     size = np.prod(shape)
-    new_params = params[0, offset:offset + size]
+    new_params = params[offset:offset + size]
     new_params = K.reshape(new_params, tuple(shape))
     reshaped_params.append(new_params)
     offset += size
@@ -191,14 +191,18 @@ class ModelWrapper(Layer):
     else:
         raise ValueError("Wrong number of inputs")
 
+    return K.map_fn(self.evaluate_model, [params, x], dtype=K.floatx())
+
+  def evaluate_model(self, inputs):
+    params, x = inputs
+
     offset = 0
-    x = x[0]
     for layer in self.layers:
-      weights = params[:, offset:offset + layer["num_params"]]
+      weights = params[offset:offset + layer["num_params"]]
       offset += layer["num_params"]
       x = self.evaluate_layer(layer, weights, x)
 
-    return K.expand_dims(x, 0)
+    return x
 
   def evaluate_layer(self, layer, weights, x):
     old_weights = weights

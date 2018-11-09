@@ -22,6 +22,27 @@ class TestWrapper(unittest.TestCase):
     prediction = wrapper.predict([params, params, x])
     np.testing.assert_allclose(expected_result, prediction)
 
+  def testBatchForwardPass(self):
+    batch_size = 1
+    model = self.build_convolutional_model()
+    wrapper = self.build_wrapped_model(model)
+
+    params = np.array([
+        [1., 2., 3., 4., 5., 6., 1., 1.],
+        [0., 0., 0., 0., 0., 0., 0., 0.],
+    ])
+    x = np.expand_dims(np.array([
+        [[1., 2.]] * batch_size,
+        [[1., 1.]] * batch_size
+    ]), 1)
+    expected_result = np.expand_dims(np.array([
+        [[12., 16.]] * batch_size,
+        [[0., 0.]] * batch_size
+    ]), 1)
+
+    prediction = wrapper.predict([params, params, x])
+    np.testing.assert_allclose(expected_result, prediction)
+
   def testForwardPassWithTrainableWeights(self):
     batch_size = 10
     model = self.build_model()
