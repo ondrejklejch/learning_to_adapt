@@ -44,11 +44,11 @@ def load_dataset(feats_dir, utt_to_spk, utt_to_pdfs, chunk_size, subsampling_fac
             tf.reshape(z, [-1, chunk_size, 1])
         )
 
-    dataset = tf.data.Dataset.list_files("%s/feats_*.scp" % feats_dir)
+    dataset = tf.data.Dataset.list_files("%s/feats_*.scp" % feats_dir, seed=0)
     dataset = dataset.map(lambda path: tf.py_func(_map_fn, [path], [tf.float32, tf.int32, tf.int32]))
     dataset = dataset.map(_reshape_fn)
     dataset = dataset.apply(tf.contrib.data.unbatch())
-    dataset = dataset.apply(tf.contrib.data.shuffle_and_repeat(10000))
+    dataset = dataset.apply(tf.contrib.data.shuffle_and_repeat(10000, seed=0))
 
     return dataset
 
@@ -111,11 +111,11 @@ def load_dataset_for_maml(feats_dir, utt_to_adapt_pdfs, utt_to_test_pdfs, num_fr
     chunks_per_sample = num_frames / chunk_size
     chunk_shift = shift / chunk_size
 
-    dataset = tf.data.Dataset.list_files("%s/feats_*.scp" % feats_dir)
+    dataset = tf.data.Dataset.list_files("%s/feats_*.scp" % feats_dir, seed=0)
     dataset = dataset.map(lambda path: tf.py_func(_map_fn, [path], [tf.float32, tf.int32, tf.float32, tf.int32]))
     dataset = dataset.map(_reshape_fn)
     dataset = dataset.apply(tf.contrib.data.unbatch())
-    dataset = dataset.apply(tf.contrib.data.shuffle_and_repeat(128))
+    dataset = dataset.apply(tf.contrib.data.shuffle_and_repeat(128, seed=0))
 
     return dataset
 
