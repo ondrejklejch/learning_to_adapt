@@ -60,3 +60,73 @@ class Multiply(Layer):
 
   def compute_output_shape(self, input_shapes):
     return input_shapes[0]
+
+
+class SDBatchNormalization(Layer):
+
+  def __init__(self, num_speakers, momentum=0.99, epsilon=1e-3, **kwargs):
+    super(SDBatchNormalization, self).__init__(**kwargs)
+
+    self.num_speakers = num_speakers
+    self.momentum = momentum
+    self.epsilon = epsilon
+    self.axis = -1
+
+  def build(self, input_shapes):
+    dim = input_shapes[0][-1]
+    shape = (self.num_speakers, dim)
+
+    self.gamma = self.add_weight(
+      shape=shape,
+      name='gamma',
+      initializer='ones')
+    self.beta = self.add_weight(
+      shape=shape,
+      name='beta',
+      initializer='zeros')
+    self.moving_mean = self.add_weight(
+      shape=(dim,),
+      name='moving_mean',
+      initializer='zeros',
+      trainable=False)
+    self.moving_variance = self.add_weight(
+      shape=(dim,),
+      name='moving_variance',
+      initializer='ones',
+      trainable=False)
+
+    self.built = True
+
+  def call(self, inputs, training=None):
+    inputs, spk_id = inputs
+    spk_id = K.cast(K.flatten(spk_id)[0], 'int32')
+
+    def normalize_inference():
+      return K.normalize_batch_in_training(inputs, self.gamma[spk_id], self.beta[spk_id], [0, 1], epsilon=self.epsilon)[0]
+
+    normed_training, mean, variance = K.normalize_batch_in_training(
+      inputs, self.gamma[spk_id], self.beta[spk_id], [0, 1], epsilon=self.epsilon)
+
+    sample_size = K.shape(inputs)[1]
+    sample_size = K.cast(sample_size, dtype=K.dtype(inputs))
+    variance *= sample_size / (sample_size - (1.0 + self.epsilon))
+
+    self.add_update([
+      K.moving_average_update(self.moving_mean, mean, self.momentum),
+      K.moving_average_update(self.moving_variance, variance, self.momentum)
+    ], inputs)
+
+    # Pick the normalized form corresponding to the training phase.
+    return K.in_train_phase(normed_training, normalize_inference, training=training)
+
+  def compute_output_shape(self, input_shapes):
+    return input_shapes[0]
+
+  def get_config(self):
+    base_config = super(SDBatchNormalization, self).get_config()
+    config = {
+      'momentum': self.momentum,
+      'epsilon': self.epsilon,
+    }
+
+    return dict(list(base_config.items()) + list(config.items()))

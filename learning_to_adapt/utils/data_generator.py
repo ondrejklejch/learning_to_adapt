@@ -52,6 +52,60 @@ def load_dataset(feats_dir, utt_to_spk, utt_to_pdfs, chunk_size, subsampling_fac
 
     return dataset
 
+def load_sd_batchnorm_dataset(feats_dir, utt_to_spk, utt_to_pdfs, chunk_size, num_frames=2000, subsampling_factor=1, left_context=0, right_context=0, si_prob=0.5):
+    if subsampling_factor != 1:
+        raise ValueError('Data generator works only with subsampling_factor=1')
+
+    def _map_fn(path):
+        feats_reader = kaldi_io.SequentialBaseFloatMatrixReader("scp:%s" % path)
+
+        feats = []
+        spks = []
+        pdfs = []
+        for (utt, utt_feats) in feats_reader:
+            if utt not in utt_to_pdfs:
+                continue
+
+            spk = utt_to_spk[utt] if random.random() < si_prob else 0
+            utt_pdfs = utt_to_pdfs[utt]
+
+            utt_subsampled_length = utt_feats.shape[0] / subsampling_factor
+            if abs(utt_subsampled_length - utt_pdfs.shape[0]) > 1:
+                continue
+
+            utt_feats = utt_feats[:utt_subsampled_length * subsampling_factor]
+            utt_pdfs = utt_pdfs[:utt_subsampled_length]
+            chunks = create_chunks(utt_feats, utt_pdfs, utt_pdfs, chunk_size, left_context, right_context, subsampling_factor)
+
+            feats.extend([chunk[0] for chunk in chunks])
+            spks.extend([spk for chunk in chunks])
+            pdfs.extend([chunk[1] for chunk in chunks])
+
+        feats = np.array(feats, dtype=np.float32)
+        spks = np.array(spks, dtype=np.int32)
+        pdfs = np.array(pdfs, dtype=np.int32)
+
+        num_chunks = chunks_per_sample * (feats.shape[0] // chunks_per_sample)
+
+        return feats[:num_chunks], spks[:num_chunks], pdfs[:num_chunks]
+
+    def _reshape_fn(x, y, z):
+        return (
+            tf.reshape(x, [-1, chunks_per_sample, chunk_size - left_context + right_context, 40]),
+            tf.reshape(y, [-1, chunks_per_sample, 1]),
+            tf.reshape(z, [-1, chunks_per_sample, chunk_size, 1])
+        )
+
+    chunks_per_sample = num_frames / chunk_size
+
+    dataset = tf.data.Dataset.list_files("%s/feats_*.scp" % feats_dir, seed=0)
+    dataset = dataset.map(lambda path: tf.py_func(_map_fn, [path], [tf.float32, tf.int32, tf.int32]))
+    dataset = dataset.map(_reshape_fn)
+    dataset = dataset.apply(tf.contrib.data.unbatch())
+    dataset = dataset.apply(tf.contrib.data.shuffle_and_repeat(1000, seed=0))
+
+    return dataset
+
 def load_dataset_for_maml(feats_dir, utt_to_adapt_pdfs, utt_to_test_pdfs, num_frames=1000, shift=500, chunk_size=50, subsampling_factor=1, left_context=0, right_context=0, adaptation_steps=1):
     if subsampling_factor != 1:
         raise ValueError('Data generator works only with subsampling_factor=1')
