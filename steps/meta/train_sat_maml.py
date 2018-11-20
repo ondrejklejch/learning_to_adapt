@@ -51,7 +51,7 @@ if __name__ == '__main__':
     num_epochs = 400
     batch_size = 4
 
-    model = create_model(350, adaptation_type, 'lda.txt')
+    model = create_model(850, adaptation_type, 'lda.txt')
     model.compile(
         loss='sparse_categorical_crossentropy',
         optimizer='adam',
@@ -62,9 +62,9 @@ if __name__ == '__main__':
     wrapper = create_model_wrapper(model)
     meta = create_maml(wrapper, get_model_weights(model))
     meta.compile(
-        loss=model.loss,
+        loss={'adapted': model.loss, 'original': model.loss},
         optimizer=Adam(),
-        metrics=['accuracy']
+        metrics={'adapted': 'accuracy', 'original': 'accuracy'}
     )
     meta.summary()
 
@@ -104,10 +104,10 @@ if __name__ == '__main__':
     ]
 
     print "Starting training"
-    meta.fit([adapt_x, adapt_y, test_x], test_y,
+    meta.fit([adapt_x, adapt_y, test_x], [test_y, test_y],
         steps_per_epoch=1024,
         epochs=num_epochs,
-        validation_data=([val_adapt_x, val_adapt_y, val_test_x], val_test_y),
+        validation_data=([val_adapt_x, val_adapt_y, val_test_x], [val_test_y, val_test_y]),
         validation_steps=128,
         callbacks=callbacks
     )

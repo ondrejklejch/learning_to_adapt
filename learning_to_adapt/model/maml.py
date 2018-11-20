@@ -5,7 +5,7 @@ from keras import losses
 from keras.engine import InputSpec
 from keras.engine.topology import Layer
 from keras.initializers import Ones, Zeros, Constant
-from keras.layers import Input, GaussianNoise, deserialize
+from keras.layers import Activation, Input, GaussianNoise, deserialize
 from keras.models import Model, load_model
 
 from loop import rnn
@@ -20,12 +20,14 @@ def create_maml(wrapper, weights, learning_rate=0.001):
   testing_feats = Input(shape=(None, None, feat_dim,))
 
   maml = MAML(wrapper, weights=[weights, learning_rates])
-  new_params = maml([training_feats, training_labels])
-  predictions = wrapper([new_params, testing_feats])
+  original_params, adapted_params = tuple(maml([training_feats, training_labels]))
+
+  original_predictions = Activation('linear', name='original')(wrapper([original_params, testing_feats]))
+  adapted_predictions = Activation('linear', name='adapted')(wrapper([adapted_params, testing_feats]))
 
   return Model(
     inputs=[training_feats, training_labels, testing_feats],
-    outputs=[predictions]
+    outputs=[adapted_predictions, original_predictions]
   )
 
 
@@ -66,13 +68,13 @@ class MAML(Layer):
     )
 
     new_params = K.transpose(last_output[0])
-    return self.wrapper.merge_params(self.repeated_params, new_params)
+    return [self.repeated_params, self.wrapper.merge_params(self.repeated_params, new_params)]
 
   def get_initital_state(self, params):
     return  [K.transpose(params)]
 
   def compute_output_shape(self, input_shape):
-    return (input_shape[0][0], self.num_params)
+    return [(input_shape[0][0], self.num_params), (input_shape[0][0], self.num_params)]
 
   def step(self, inputs, states):
     feats, labels = inputs
