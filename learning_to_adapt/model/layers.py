@@ -64,7 +64,7 @@ class Multiply(Layer):
 
 class SDBatchNormalization(Layer):
 
-  def __init__(self, num_speakers, momentum=0.99, epsilon=1e-3, **kwargs):
+  def __init__(self, num_speakers=9572, momentum=0.99, epsilon=1e-3, **kwargs):
     super(SDBatchNormalization, self).__init__(**kwargs)
 
     self.num_speakers = num_speakers
@@ -125,7 +125,46 @@ class SDBatchNormalization(Layer):
   def get_config(self):
     base_config = super(SDBatchNormalization, self).get_config()
     config = {
+      'num_speakers': self.num_speakers,
       'momentum': self.momentum,
+      'epsilon': self.epsilon,
+    }
+
+    return dict(list(base_config.items()) + list(config.items()))
+
+
+class UttBatchNormalization(Layer):
+
+  def __init__(self, epsilon=1e-3, **kwargs):
+    super(UttBatchNormalization, self).__init__(**kwargs)
+
+    self.epsilon = epsilon
+    self.axis = -1
+
+  def build(self, input_shapes):
+    dim = input_shapes[-1]
+    shape = (dim,)
+
+    self.gamma = self.add_weight(
+      shape=shape,
+      name='gamma',
+      initializer='ones')
+    self.beta = self.add_weight(
+      shape=shape,
+      name='beta',
+      initializer='zeros')
+
+    self.built = True
+
+  def call(self, inputs, training=None):
+    return K.normalize_batch_in_training(inputs, self.gamma, self.beta, [0, 1], epsilon=self.epsilon)[0]
+
+  def compute_output_shape(self, input_shapes):
+    return input_shapes
+
+  def get_config(self):
+    base_config = super(UttBatchNormalization, self).get_config()
+    config = {
       'epsilon': self.epsilon,
     }
 

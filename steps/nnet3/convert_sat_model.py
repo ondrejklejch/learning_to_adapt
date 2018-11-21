@@ -8,7 +8,7 @@ import tensorflow as tf
 
 from keras.models import Model
 from keras.layers import Input
-from learning_to_adapt.model import FeatureTransform, LHUC, Renorm, Multiply
+from learning_to_adapt.model import FeatureTransform, LHUC, Renorm, Multiply, SDBatchNormalization, UttBatchNormalization
 
 
 def load_model(path):
@@ -16,7 +16,10 @@ def load_model(path):
         'FeatureTransform': FeatureTransform,
         'LHUC': LHUC,
         'Renorm': Renorm,
-        'Multiply': Multiply})
+        'Multiply': Multiply,
+        'SDBatchNormalization': SDBatchNormalization,
+        'UttBatchNormalization': UttBatchNormalization,
+    })
 
 
 if __name__ == '__main__':
@@ -39,6 +42,12 @@ if __name__ == '__main__':
 
         if l.name.startswith('lhuc'):
             y = LHUC(name=l.name, weights=[l.get_weights()[0][0]])(y)
+        elif l.name.endswith('batchnorm'):
+            weights = l.get_weights()
+            gamma = weights[0][0]
+            beta = weights[1][0]
+
+            y = UttBatchNormalization(name=l.name, weights=[gamma, beta])(y)
         else:
             y = l(y)
 
