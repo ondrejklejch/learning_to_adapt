@@ -1,8 +1,9 @@
 from keras import backend as K
 from keras.activations import get as get_activation
 from keras.engine.topology import Layer
-from keras.layers import Activation, Dense, Conv1D
-from layers import FeatureTransform, LHUC, Renorm
+from keras.layers import Input, Activation, Dense, Conv1D
+from keras.models import Model
+from layers import FeatureTransform, LHUC, Renorm, UttBatchNormalization
 import numpy as np
 from scipy import sparse
 import tensorflow as tf
@@ -63,6 +64,14 @@ def create_model_wrapper(model):
         "num_params": count_params(layer),
         "weights_shapes": [w.shape for w in layer.get_weights()],
       })
+    elif isinstance(layer, UttBatchNormalization):
+      layers.append({
+        "type": "batchnorm",
+        "trainable": layer.trainable,
+        "num_params": count_params(layer),
+        "weights_shapes": [w.shape for w in layer.get_weights()],
+        "epsilon": layer.epsilon,
+      })
     elif isinstance(layer, Activation):
       layers.append({
         "type": "activation",
@@ -78,6 +87,43 @@ def create_model_wrapper(model):
     num_params,
     loss,
     layers)
+
+def create_model(wrapper):
+  x = y = Input(shape=(None, wrapper.feat_dim))
+
+  for l in wrapper.layers:
+    if l["type"] == "dense":
+      y = Dense(
+        units=l["units"],
+        use_bias=l["use_bias"],
+        activation=l["activation"],
+        trainable=l["trainable"]
+      )(y)
+    elif l["type"] == "conv1d":
+      y = Conv1D(
+        filters=l["filters"],
+        kernel_size=l["kernel_size"],
+        strides=l["strides"],
+        padding=l["padding"],
+        dilation_rate=l["dilation_rate"],
+        activation=l["activation"],
+        use_bias=l["use_bias"],
+        trainable=l["trainable"]
+      )(y)
+    elif l["type"] == "feature_transform":
+      y = FeatureTransform(trainable=l["trainable"])(y)
+    elif l["type"] == "lhuc":
+      y = LHUC(trainable=l["trainable"])(y)
+    elif l["type"] == "renorm":
+      y = Renorm()(y)
+    elif l["type"] == "batchnorm":
+      y = UttBatchNormalization(epsilon=l["epsilon"], trainable=l["trainable"])(y)
+    elif l["type"] == "activation":
+      y = Activation(l["activation"])(y)
+    else:
+      raise ValueError("Not implemented: %s" % l["type"])
+
+  return Model(inputs=x, outputs=y)
 
 def count_params(layer):
   return sum([w.flatten().shape[0] for w in layer.get_weights()])
@@ -227,6 +273,8 @@ class ModelWrapper(Layer):
     elif layer["type"] == "renorm":
       dim = K.cast(K.shape(x)[-1], K.floatx())
       x = K.l2_normalize(x, axis=-1) * K.sqrt(dim)
+    elif layer["type"] == "batchnorm":
+      x = K.normalize_batch_in_training(x, weights[0], weights[1], [0, 1], epsilon=layer["epsilon"])[0]
     elif layer["type"] == "activation":
       x = get_activation(layer["activation"])(x)
 
