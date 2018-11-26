@@ -8,7 +8,7 @@ from scipy import sparse
 import tensorflow as tf
 
 
-def create_model_wrapper(model, sparse=False, num_sparse_params=10000):
+def create_model_wrapper(model):
   all_params = get_model_weights(model)
   feat_dim = model.layers[0].input_shape[-1]
   num_labels = model.layers[-1].output_shape[-1]
@@ -72,21 +72,12 @@ def create_model_wrapper(model, sparse=False, num_sparse_params=10000):
         "weights_shapes": [w.shape for w in layer.get_weights()],
       })
 
-  if not sparse:
-    return ModelWrapper(
-      feat_dim,
-      num_labels,
-      num_params,
-      loss,
-      layers)
-  else:
-    return SparseModelWrapper(
-      num_sparse_params=num_sparse_params,
-      feat_dim=feat_dim,
-      num_labels=num_labels,
-      num_params=num_params,
-      loss=loss,
-      layers=layers)
+  return ModelWrapper(
+    feat_dim,
+    num_labels,
+    num_params,
+    loss,
+    layers)
 
 def count_params(layer):
   return sum([w.flatten().shape[0] for w in layer.get_weights()])

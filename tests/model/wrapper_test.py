@@ -5,7 +5,7 @@ import numpy as np
 import unittest
 
 from learning_to_adapt.model.layers import FeatureTransform, LHUC
-from learning_to_adapt.model.wrapper import create_model_wrapper, get_model_weights, set_model_weights, SparseModelWrapper
+from learning_to_adapt.model.wrapper import create_model_wrapper, get_model_weights, set_model_weights
 
 
 class TestWrapper(unittest.TestCase):
@@ -59,21 +59,6 @@ class TestWrapper(unittest.TestCase):
     prediction = wrapper.predict([params, trainable_params, x])
     np.testing.assert_allclose(expected_result, prediction)
 
-  def testForwardPassWithSparseTrainableWeights(self):
-    batch_size = 10
-    model = self.build_model()
-    wrapper = self.build_wrapped_model(model, sparse=True)
-    wrapper.set_weights([np.array([0, 2, 4, 5, 8, 10])])
-
-    r = -356
-    params = np.array([[r, 1., r, 0., r, r, 0., 1., r, -1., r, 1.]])
-    trainable_params = np.array([[1., 0., 1., 0., -1., 1.]])
-    x = np.array([[[1., 1.]] * batch_size])
-    expected_result = np.array([[[0., 0.]] * batch_size])
-
-    prediction = wrapper.predict([params, trainable_params, x])
-    np.testing.assert_allclose(expected_result, prediction)
-
   def testForwardPassWithConvolutionalLayers(self):
     batch_size = 10
     model = self.build_convolutional_model()
@@ -110,24 +95,8 @@ class TestWrapper(unittest.TestCase):
     expected_groups = [(0, 6)]
     self.assertEqual(expected_groups, list(wrapper.param_groups()))
 
-  def testCanSerializeSparseModelWrapper(self):
-    model = self.build_model()
-    wrapper = self.build_wrapped_model(model, sparse=True)
-    original_weights = wrapper.get_weights()
-
-    model_path = "/tmp/sparse_wrapper.h5"
-    wrapper.save(model_path)
-    reloaded_wrapper = load_model(model_path, custom_objects={'SparseModelWrapper': SparseModelWrapper})
-    reloaded_weights = reloaded_wrapper.get_weights()
-
-    np.testing.assert_allclose(original_weights, reloaded_weights)
-
-  def build_wrapped_model(self, model, sparse=False):
-    if sparse:
-      wrapper = create_model_wrapper(model, sparse=True, num_sparse_params=6)
-    else:
-      wrapper = create_model_wrapper(model)
-
+  def build_wrapped_model(self, model):
+    wrapper = create_model_wrapper(model)
     params = Input(shape=(wrapper.num_params,))
     trainable_params = Input(shape=(wrapper.num_trainable_params,))
     x = Input(shape=K.int_shape(model.inputs[0]))
