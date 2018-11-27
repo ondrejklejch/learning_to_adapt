@@ -1,20 +1,21 @@
 import sys
 import numpy as np
 
-from keras.callbacks import ModelCheckpoint, CSVLogger
+from keras import backend as K
+from keras.callbacks import Callback, ModelCheckpoint, CSVLogger, LearningRateScheduler, TensorBoard
 from keras.layers import Input, Activation, Conv1D
 from keras.models import load_model, Model
 from keras.optimizers import Adam
 
-from learning_to_adapt.model import create_maml, create_model_wrapper, get_model_weights, FeatureTransform, LHUC, Renorm
+from learning_to_adapt.model import create_maml, create_model_wrapper, get_model_weights, FeatureTransform, LHUC, Renorm, UttBatchNormalization
 from learning_to_adapt.utils import load_dataset_for_maml, load_utt_to_pdfs, load_lda
 
 import keras
 import tensorflow as tf
 
 config = tf.ConfigProto()
-config.intra_op_parallelism_threads=1
-config.inter_op_parallelism_threads=1
+config.intra_op_parallelism_threads=8
+config.inter_op_parallelism_threads=8
 keras.backend.tensorflow_backend.set_session(tf.Session(config=config))
 
 
@@ -37,6 +38,19 @@ def create_model(hidden_dim=350, adaptation_type='ALL', lda_path=None):
     return Model(inputs=[feats], outputs=[y])
 
 
+class LossWeightScheduler(Callback):
+
+    def __init__(self, num_epochs):
+        self.num_epochs = float(num_epochs)
+        self.adapted = K.variable(0.0)
+        self.original = K.variable(1.0)
+
+    def on_epoch_end(self, epoch, logs={}):
+        epoch += 1
+        K.set_value(self.original, 1.0 - epoch / self.num_epochs)
+        K.set_value(self.adapted, epoch / self.num_epochs)
+
+
 if __name__ == '__main__':
     train_feats = sys.argv[1]
     val_feats = sys.argv[2]
@@ -51,18 +65,22 @@ if __name__ == '__main__':
     num_epochs = 400
     batch_size = 4
 
+    loss_weight_scheduler = LossWeightScheduler(num_epochs=num_epochs)
+
     model = create_model(850, adaptation_type, 'lda.txt')
     model.compile(
         loss='sparse_categorical_crossentropy',
-        optimizer='adam',
+        optimizer=Adam(),
         metrics=['accuracy']
     )
     #model.summary()
 
     wrapper = create_model_wrapper(model)
     meta = create_maml(wrapper, get_model_weights(model))
+    meta.save(output_path + "meta.graph.h5")
     meta.compile(
         loss={'adapted': model.loss, 'original': model.loss},
+        loss_weights={'adapted': loss_weight_scheduler.adapted, 'original': loss_weight_scheduler.original},
         optimizer=Adam(),
         metrics={'adapted': 'accuracy', 'original': 'accuracy'}
     )
@@ -99,8 +117,10 @@ if __name__ == '__main__':
 
     callbacks = [
         CSVLogger(output_path + "meta.csv"),
-        ModelCheckpoint(filepath=output_path + "meta.{epoch:02d}.h5", save_best_only=False, period=10),
-        ModelCheckpoint(filepath=output_path + "meta.best.h5", save_best_only=True),
+        ModelCheckpoint(filepath=output_path + "meta.{epoch:02d}.h5", save_weights_only=True, save_best_only=False, period=10),
+        ModelCheckpoint(filepath=output_path + "meta.best.h5", save_weights_only=True, save_best_only=True, monitor='val_adapted_loss'),
+        TensorBoard(output_path + "log"),
+        loss_weight_scheduler,
     ]
 
     print "Starting training"
@@ -112,5 +132,5 @@ if __name__ == '__main__':
         callbacks=callbacks
     )
 
-    print meta.get_weights()
-    print "Frame accuracy of the adapted model is: %.4f" % meta.evaluate([val_adapt_x, val_adapt_y, val_test_x], val_test_y, steps=32)[1]
+    print meta.get_weights()[1]
+    print "Frame accuracy of the adapted model is: %.4f" % meta.evaluate([val_adapt_x, val_adapt_y, val_test_x], [val_test_y, val_test_y], steps=128)[1]
