@@ -169,7 +169,7 @@ def load_dataset_for_maml(feats_dir, utt_to_adapt_pdfs, utt_to_test_pdfs, num_fr
     dataset = dataset.map(lambda path: tf.py_func(_map_fn, [path], [tf.float32, tf.int32, tf.float32, tf.int32]))
     dataset = dataset.map(_reshape_fn)
     dataset = dataset.apply(tf.contrib.data.unbatch())
-    dataset = dataset.apply(tf.contrib.data.shuffle_and_repeat(128, seed=0))
+    dataset = dataset.apply(tf.contrib.data.shuffle_and_repeat(1024, seed=0))
 
     return dataset
 
