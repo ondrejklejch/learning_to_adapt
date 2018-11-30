@@ -9,6 +9,7 @@ from keras.layers import Activation, Input, GaussianNoise, deserialize
 from keras.models import Model, load_model
 
 from loop import rnn
+from meta import LearningRatePerLayerMetaLearner
 
 def create_maml(wrapper, weights, learning_rate=0.001):
   weights = weights.reshape((1, -1))
@@ -30,6 +31,18 @@ def create_maml(wrapper, weights, learning_rate=0.001):
     outputs=[adapted_predictions, original_predictions]
   )
 
+def create_adapter(wrapper, learning_rates):
+  num_params = wrapper.num_params
+  feat_dim = wrapper.feat_dim
+
+  params = Input(shape=(num_params,))
+  training_feats = Input(shape=(None, None, None, feat_dim,))
+  training_labels = Input(shape=(None, None, None, 1,))
+
+  meta = LearningRatePerLayerMetaLearner(wrapper, weights=[learning_rates])
+  adapted_params = meta([training_feats, training_labels, params])
+
+  return Model(inputs=[params, training_feats, training_labels], outputs=[adapted_params])
 
 class MAML(Layer):
 
