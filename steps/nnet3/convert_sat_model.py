@@ -47,7 +47,7 @@ if __name__ == '__main__':
             gamma = weights[0][0]
             beta = weights[1][0]
 
-            y = UttBatchNormalization(name=l.name, weights=[gamma, beta])(y)
+            y = UttBatchNormalization(name='lhuc.%s' % l.name, weights=[gamma, beta])(y)
         else:
             y = l(y)
 
