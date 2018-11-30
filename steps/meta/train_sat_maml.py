@@ -30,8 +30,7 @@ def create_model(hidden_dim=350, adaptation_type='ALL', lda_path=None):
     for i, (kernel_size, dilation_rate) in enumerate(layers):
         name = "tdnn%d" % (i + 1)
         x = Conv1D(hidden_dim, kernel_size=kernel_size, dilation_rate=dilation_rate, activation="relu", name="%s.affine" % name, trainable=adaptation_type == 'ALL')(x)
-        x = Renorm(name="%s.renorm" % name)(x)
-        x = LHUC(name="lhuc.%s" % name, trainable=adaptation_type == 'LHUC')(x)
+        x = UttBatchNormalization(name="lhuc.%s.batchnorm" % name, trainable=adaptation_type == 'LHUC')(x)
 
     y = Conv1D(4208, kernel_size=1, activation="softmax", name="output.affine", trainable=adaptation_type == 'ALL')(x)
 
@@ -47,8 +46,8 @@ class LossWeightScheduler(Callback):
 
     def on_epoch_end(self, epoch, logs={}):
         epoch += 1
-        K.set_value(self.original, 1.0 - epoch / self.num_epochs)
-        K.set_value(self.adapted, epoch / self.num_epochs)
+        K.set_value(self.original, min(1.0, max(0.0, 1.5 - 2.0 * epoch / self.num_epochs)))
+        K.set_value(self.adapted, min(1.0, max(0.0, -0.5 + 2.0 * epoch / self.num_epochs)))
 
 
 if __name__ == '__main__':
