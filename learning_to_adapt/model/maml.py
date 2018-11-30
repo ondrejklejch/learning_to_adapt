@@ -7,6 +7,7 @@ from keras.engine.topology import Layer
 from keras.initializers import Ones, Zeros, Constant
 from keras.layers import Activation, Input, GaussianNoise, deserialize
 from keras.models import Model, load_model
+from keras.regularizers import l2
 
 from loop import rnn
 from meta import LearningRatePerLayerMetaLearner
@@ -59,13 +60,15 @@ class MAML(Layer):
     self.params = self.add_weight(
       shape=(1, self.num_params),
       name='params',
-      initializer='uniform'
+      initializer='uniform',
+      regularizer=l2(0.00005),
     )
 
     self.learning_rate = self.add_weight(
       shape=(self.num_param_groups,),
       name='learning_rate',
-      initializer='zeros'
+      initializer='zeros',
+      regularizer=l2(0.00005),
     )
 
   def call(self, inputs):
