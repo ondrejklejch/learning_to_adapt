@@ -9,7 +9,7 @@ import keras
 import kaldi_io
 import tensorflow as tf
 
-from learning_to_adapt.model import FeatureTransform, LHUC, Renorm, load_meta_learner, get_model_weights, set_model_weights
+from learning_to_adapt.model import FeatureTransform, LHUC, Renorm, UttBatchNormalization, load_meta_learner, get_model_weights, set_model_weights
 from learning_to_adapt.utils import load_utt_to_pdfs, pad_feats, create_chunks
 
 config = tf.ConfigProto()
@@ -75,17 +75,17 @@ if __name__ == '__main__':
     frame_subsampling_factor = int(sys.argv[7])
     left_context = int(sys.argv[8])
     right_context = int(sys.argv[9])
-    chunk_size = 50
+    chunk_size = 10
 
     if not model.endswith('.h5'):
         raise TypeError ('Unsupported model type. Please use h5 format. Update Keras if needed')
 
     ## Load model
-    m = keras.models.load_model(model, custom_objects={'FeatureTransform': FeatureTransform, 'LHUC': LHUC, 'Renorm': Renorm})
+    m = keras.models.load_model(model, custom_objects={'FeatureTransform': FeatureTransform, 'LHUC': LHUC, 'Renorm': Renorm, 'UttBatchNormalization': UttBatchNormalization})
 
     with open(counts, 'r') as f:
         counts = np.fromstring(f.read().strip(" []"), dtype='float32', sep=' ')
-	priors = counts / np.sum(counts)
+    priors = counts / np.sum(counts)
 
     with kaldi_io.SequentialBaseFloatMatrixReader("ark:-") as arkIn, \
             kaldi_io.BaseFloatMatrixWriter("ark,t:-") as arkOut:
@@ -104,7 +104,7 @@ if __name__ == '__main__':
                 continue
 
             pdfs = utt_to_pdfs[utt]
-            chunks.extend(create_chunks(feats, pdfs, pdfs, chunk_size, left_context, right_context, frame_subsampling_factor))
+            chunks.extend(create_chunks(feats, pdfs, pdfs, chunk_size, left_context, right_context, frame_subsampling_factor, trim_silence=False))
 
             if len(chunks) >= num_chunks:
                 break
@@ -115,6 +115,7 @@ if __name__ == '__main__':
 
         before = np.mean(np.argmax(m.predict(feats), axis=-1).flatten() == pdfs.flatten())
         print >> sys.stderr, "BEFORE", before
+        print >> sys.stderr, "SILENCE", len([x for x in pdfs.flatten() if x in set([0, 118, 41, 43, 60])])
         adapt(m, adaptation_method, adaptation_config, feats, pdfs)
 
         after = np.mean(np.argmax(m.predict(feats), axis=-1).flatten() == pdfs.flatten())

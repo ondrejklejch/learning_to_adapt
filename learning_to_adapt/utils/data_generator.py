@@ -5,6 +5,7 @@ import kaldi_io
 import collections
 import tensorflow as tf
 
+SILENCE_PDFS = set([0, 41, 43, 60, 118])
 
 def load_dataset(feats_dir, utt_to_spk, utt_to_pdfs, chunk_size, subsampling_factor=1, left_context=0, right_context=0):
     if subsampling_factor != 1:
@@ -200,20 +201,50 @@ def load_utt_to_spk(utt2spk):
 
     return utt_to_spk
 
-def create_chunks(feats, adapt_pdfs, test_pdfs, chunk_size, left_context, right_context, subsampling_factor):
-    start, end = 0, test_pdfs.shape[0] - 1
-    if end - start < 2 * chunk_size:
-        return []
-
+def create_chunks(feats, adapt_pdfs, test_pdfs, chunk_size, left_context, right_context, subsampling_factor, trim_silence=False):
     chunks = []
     feats = pad_feats(feats, left_context, right_context)
-    for offset in get_offsets(start, end, chunk_size):
-        chunk_feats = feats[offset:offset + chunk_size + right_context - left_context]
-        chunk_adapt_pdfs = adapt_pdfs[offset:offset + chunk_size]
-        chunk_test_pdfs = test_pdfs[offset:offset + chunk_size]
-        chunks.append((chunk_feats, chunk_adapt_pdfs, chunk_test_pdfs))
+
+    for start, end in get_segments(test_pdfs, chunk_size, trim_silence):
+        if end - start < chunk_size:
+            continue
+
+        for offset in get_offsets(start, end, chunk_size):
+            chunk_feats = feats[offset:offset + chunk_size + right_context - left_context]
+            chunk_adapt_pdfs = adapt_pdfs[offset:offset + chunk_size]
+            chunk_test_pdfs = test_pdfs[offset:offset + chunk_size]
+            chunks.append((chunk_feats, chunk_adapt_pdfs, chunk_test_pdfs))
 
     return chunks
+
+
+def get_segments(pdfs, chunk_size, trim_silence):
+    if not trim_silence:
+        return [(0, pdfs.shape[0])]
+
+    last_end = 0
+    is_silence = False
+    silences = [(0, 0)]
+    pdfs = pdfs.flatten()
+    for i, pdf in enumerate(pdfs):
+        if is_silence:
+            if pdf not in SILENCE_PDFS:
+                silences.append((i - silence_length, i))
+                is_silence = False
+                silence_length = 0
+            else:
+                silence_length += 1
+        else:
+            if pdf in SILENCE_PDFS:
+                is_silence = True
+                silence_length = 1
+
+    if is_silence:
+        silences.append((pdfs.shape[0] - silence_length, pdfs.shape[0]))
+    else:
+        silences.append((pdfs.shape[0], pdfs.shape[0]))
+
+    return [(e1, s2) for ((s1, e1), (s2, e2)) in zip(silences, silences[1:])]
 
 def pad_feats(feats, left_context, right_context):
     if left_context == 0 and right_context == 0:
@@ -229,5 +260,10 @@ def pad_feats(feats, left_context, right_context):
 def get_offsets(start, end, window):
     length = end - start
     num_chunks = (length - window) / window
-    shift = float(length - window) / num_chunks
-    return [start + int(shift * i) for i in range(num_chunks)] + [length - window]
+
+    if num_chunks == 0:
+        return [start]
+    else:
+        # Distribute chunks uniformly on the segment, there might be gaps between segments.
+        shift = float(length - window) / num_chunks
+        return [start + int(shift * i) for i in range(num_chunks)] + [end - window]

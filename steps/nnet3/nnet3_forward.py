@@ -10,7 +10,7 @@ import keras
 import kaldi_io
 import tensorflow as tf
 
-from learning_to_adapt.model import FeatureTransform, LHUC, Renorm
+from learning_to_adapt.model import FeatureTransform, LHUC, Renorm, UttBatchNormalization
 from learning_to_adapt.utils import pad_feats
 from learning_to_adapt.optimizers import AdamW
 
@@ -40,6 +40,7 @@ if __name__ == '__main__':
         'FeatureTransform': FeatureTransform,
         'LHUC': LHUC,
         'Renorm': Renorm,
+        'UttBatchNormalization': UttBatchNormalization,
         'AdamW': AdamW})
 
     if os.path.isfile(counts):
