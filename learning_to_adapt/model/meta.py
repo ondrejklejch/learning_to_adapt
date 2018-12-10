@@ -43,11 +43,7 @@ def load_meta_learner(model, path):
     'LearningRatePerLayerMetaLearner': LearningRatePerLayerMetaLearner
   }
 
-  model = load_model(path, custom_objects=custom_objects)
-  inputs = model.inputs[:3]
-  outputs = [model.layers[-3].output]
-
-  return Model(inputs=inputs, outputs=outputs)
+  return load_model(path, custom_objects=custom_objects)
 
 
 class MetaLearner(Layer):
