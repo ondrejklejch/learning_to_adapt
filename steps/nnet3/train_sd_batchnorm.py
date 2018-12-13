@@ -59,7 +59,7 @@ if __name__ == '__main__':
     train_dataset = train_dataset.prefetch(1024)
     x, spk, y = train_dataset.make_one_shot_iterator().get_next()
 
-    val_dataset = load_sd_batchnorm_dataset(val_data, utt_to_spk, utt_to_pdfs, chunk_size=50, subsampling_factor=1, left_context=left_context, right_context=right_context)
+    val_dataset = load_sd_batchnorm_dataset(val_data, utt_to_spk, utt_to_pdfs, chunk_size=50, subsampling_factor=1, left_context=left_context, right_context=right_context, si_prob=1.0)
     val_dataset = val_dataset.take(512).cache().repeat()
     val_x, val_spk, val_y = val_dataset.make_one_shot_iterator().get_next()
 

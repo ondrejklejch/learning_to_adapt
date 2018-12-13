@@ -15,17 +15,17 @@ pdfs="ark:$ali/ali.txt"
 left_context=-16
 right_context=12
 lda="lda.txt"
-output="exp/tdnn_am_850_sd_batchnorm_2/"
+output="exp/tdnn_am_850_sd_batchnorm_better_shuffling/"
 
 if [ ! -f $ali/ali.txt ]; then
   ali-to-pdf $ali/final.mdl "ark:gunzip -c $ali/ali.*.gz |" ark,t:$ali/ali.txt
 fi
 
 # Prepare training data splits
-if [ ! -d $data/keras_sd_batchnorm_train_split ]; then
-    mkdir -p $data/keras_sd_batchnorm_{train,val}_split
-    python2.7 steps/split_feats_by_utts.py $data/feats.scp $data/keras_sd_batchnorm_train_split $data/keras_sd_batchnorm_val_split 3
+if [ ! -d $data/keras_meta_train_split ]; then
+    mkdir -p $data/keras_meta_{train,val}_split
+    python2.7 steps/split_feats_by_spk.py $data/feats.scp $data/keras_meta_train_split $data/keras_meta_val_split 10
 fi
 
 mkdir -p $output
-python2.7 steps/nnet3/train_sd_batchnorm.py $data/keras_sd_batchnorm_train_split $data/keras_sd_batchnorm_val_split $utt2spk "$pdfs" $left_context $right_context $lda $output
+python2.7 steps/nnet3/train_sd_batchnorm.py $data/keras_meta_train_split $data/keras_meta_val_split $utt2spk "$pdfs" $left_context $right_context $lda $output

@@ -67,7 +67,7 @@ def load_sd_batchnorm_dataset(feats_dir, utt_to_spk, utt_to_pdfs, chunk_size, nu
             if utt not in utt_to_pdfs:
                 continue
 
-            spk = utt_to_spk[utt] if random.random() < si_prob else 0
+            spk = utt_to_spk[utt] if random.random() > si_prob else 0
             utt_pdfs = utt_to_pdfs[utt]
 
             utt_subsampled_length = utt_feats.shape[0] / subsampling_factor
