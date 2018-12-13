@@ -94,7 +94,7 @@ class MAML(Layer):
 
   def compute_gradients(self, trainable_params, feats, labels):
     predictions = self.wrapper([self.repeated_params, trainable_params, feats])
-    loss = K.mean(losses.get(self.wrapper.loss)(labels, predictions))
+    loss = K.mean(losses.get(self.wrapper.loss)(labels, predictions), axis=[1,2])
     return K.stop_gradient(K.squeeze(K.gradients(loss, [trainable_params]), 0))
 
   def compute_output_shape(self, input_shape):
