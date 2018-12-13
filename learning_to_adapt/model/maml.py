@@ -12,16 +12,16 @@ from keras.regularizers import l2
 from loop import rnn
 from meta import LearningRatePerLayerMetaLearner
 
-def create_maml(wrapper, weights, learning_rate=0.001):
+def create_maml(wrapper, weights, num_steps=3, learning_rate=0.001):
   weights = weights.reshape((1, -1))
   learning_rates = np.array([learning_rate] * len(list(wrapper.param_groups())))
 
   feat_dim = wrapper.feat_dim
-  training_feats = Input(shape=(None, None, None, feat_dim,))
-  training_labels = Input(shape=(None, None, None, 1,))
+  training_feats = Input(shape=(num_steps, None, None, feat_dim,))
+  training_labels = Input(shape=(num_steps, None, None, 1,))
   testing_feats = Input(shape=(None, None, feat_dim,))
 
-  maml = MAML(wrapper, weights=[weights, learning_rates])
+  maml = MAML(wrapper, num_steps, weights=[weights, learning_rates])
   original_params, adapted_params = tuple(maml([training_feats, training_labels]))
 
   original_predictions = Activation('linear', name='original')(wrapper([original_params, testing_feats]))
@@ -47,10 +47,12 @@ def create_adapter(wrapper, learning_rates):
 
 class MAML(Layer):
 
-  def __init__(self, wrapper, **kwargs):
+  def __init__(self, wrapper, num_steps=3, **kwargs):
     super(MAML, self).__init__(**kwargs)
 
     self.wrapper = wrapper
+    self.num_steps = num_steps
+
     self.param_groups = list(wrapper.param_groups())
     self.num_param_groups = len(self.param_groups)
     self.num_params = self.wrapper.num_params
@@ -75,50 +77,40 @@ class MAML(Layer):
     self.repeated_params = K.squeeze(K.repeat(self.params, K.shape(feats)[0]), 0)
     trainable_params = self.wrapper.get_trainable_params(self.repeated_params)
 
-    last_output, _, _ = rnn(
-      step_function=self.step,
-      inputs=[feats, labels],
-      initial_states=self.get_initital_state(trainable_params),
-    )
+    for i in range(self.num_steps):
+      trainable_params = self.step(feats[:,i], labels[:,i], trainable_params)
 
-    new_params = K.transpose(last_output[0])
-    return [self.repeated_params, self.wrapper.merge_params(self.repeated_params, new_params)]
+    return [self.repeated_params, self.wrapper.merge_params(self.repeated_params, trainable_params)]
 
-  def get_initital_state(self, params):
-    return  [K.transpose(params)]
-
-  def compute_output_shape(self, input_shape):
-    return [(input_shape[0][0], self.num_params), (input_shape[0][0], self.num_params)]
-
-  def step(self, inputs, states):
-    feats, labels = inputs
-    params = states[0]
+  def step(self, feats, labels, params):
     gradients = self.compute_gradients(params, feats, labels)
 
     new_params = []
     for param_group, indices in enumerate(self.param_groups):
       s, e = indices
-      new_params.append(params[s:e] - self.learning_rate[param_group] * gradients[s:e])
+      new_params.append(params[:, s:e] - self.learning_rate[param_group] * gradients[:, s:e])
 
-    new_params = K.concatenate(new_params, axis=0)
-
-    return [new_params], [new_params]
+    return K.concatenate(new_params, axis=1)
 
   def compute_gradients(self, trainable_params, feats, labels):
-    predictions = self.wrapper([self.repeated_params, K.transpose(trainable_params), feats])
+    predictions = self.wrapper([self.repeated_params, trainable_params, feats])
     loss = K.mean(losses.get(self.wrapper.loss)(labels, predictions))
     return K.stop_gradient(K.squeeze(K.gradients(loss, [trainable_params]), 0))
+
+  def compute_output_shape(self, input_shape):
+    return [(input_shape[0][0], self.num_params), (input_shape[0][0], self.num_params)]
 
   def get_config(self):
     return {
       'wrapper': {
         'class_name': self.wrapper.__class__.__name__,
         'config': self.wrapper.get_config()
-      }
+      },
+      'num_steps': self.num_steps
     }
 
   @classmethod
   def from_config(cls, config, custom_objects=None):
     wrapper = deserialize(config.pop('wrapper'), custom_objects=custom_objects)
 
-    return cls(wrapper)
+    return cls(wrapper, config.get('num_steps', 3))
