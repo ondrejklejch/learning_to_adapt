@@ -62,7 +62,8 @@ if __name__ == '__main__':
     right_context = int(sys.argv[9])
 
     num_epochs = 400
-    batch_size = 4
+    batch_size = 2
+    use_second_order_derivatives = True
 
     loss_weight_scheduler = LossWeightScheduler(num_epochs=num_epochs)
 
@@ -74,8 +75,8 @@ if __name__ == '__main__':
     )
     #model.summary()
 
-    wrapper = create_model_wrapper(model)
-    meta = create_maml(wrapper, get_model_weights(model))
+    wrapper = create_model_wrapper(model, batch_size=batch_size)
+    meta = create_maml(wrapper, get_model_weights(model), use_second_order_derivatives=use_second_order_derivatives)
     meta.save(output_path + "meta.graph.h5")
     meta.compile(
         loss={'adapted': model.loss, 'original': model.loss},

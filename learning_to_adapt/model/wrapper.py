@@ -9,7 +9,7 @@ from scipy import sparse
 import tensorflow as tf
 
 
-def create_model_wrapper(model):
+def create_model_wrapper(model, batch_size=1):
   all_params = get_model_weights(model)
   feat_dim = model.layers[0].input_shape[-1]
   num_labels = model.layers[-1].output_shape[-1]
@@ -86,7 +86,8 @@ def create_model_wrapper(model):
     num_labels,
     num_params,
     loss,
-    layers)
+    layers,
+    batch_size)
 
 def create_model(wrapper):
   x = y = Input(shape=(None, wrapper.feat_dim))
@@ -184,7 +185,7 @@ class ModelWrapper(Layer):
   a wrapper g(w, x) such that g(w, x) == f(x).
   """
 
-  def __init__(self, feat_dim, num_labels, num_params, loss, layers, **kwargs):
+  def __init__(self, feat_dim, num_labels, num_params, loss, layers, batch_size=4, **kwargs):
     super(ModelWrapper, self).__init__(**kwargs)
 
     self.feat_dim = feat_dim
@@ -193,6 +194,7 @@ class ModelWrapper(Layer):
     self.num_trainable_params = self.count_trainable_params(layers)
     self.loss = loss
     self.layers = layers
+    self.batch_size = batch_size
 
   def count_trainable_params(self, layers):
     return sum([l["num_params"] * l["trainable"] for l in layers])
@@ -228,7 +230,7 @@ class ModelWrapper(Layer):
     else:
         raise ValueError("Wrong number of inputs")
 
-    return K.map_fn(self.evaluate_model, [params, x], dtype=K.floatx())
+    return K.stack([self.evaluate_model([params[i], x[i]]) for i in range(self.batch_size)], 0)
 
   def evaluate_model(self, inputs):
     params, x = inputs
@@ -318,4 +320,5 @@ class ModelWrapper(Layer):
       "num_params": self.num_params,
       "loss": self.loss,
       "layers": self.layers,
+      "batch_size": self.batch_size
     }
