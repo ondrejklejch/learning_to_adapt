@@ -19,13 +19,8 @@ config.inter_op_parallelism_threads=8
 keras.backend.tensorflow_backend.set_session(tf.Session(config=config))
 
 
-def create_model(hidden_dim=350, adaptation_type='ALL', lda_path=None):
-    lda, bias = load_lda(lda_path)
-    lda = lda.reshape((5, 40, 200))
-
-    feats = Input(shape=(None, 40))
-    x = Conv1D(200, kernel_size=5, name="lda", trainable=False, weights=[lda, bias])(feats)
-
+def create_model(hidden_dim=350, adaptation_type='ALL'):
+    feats = x = Input(shape=(None, 200))
     layers = [(1, 1), (2, 3), (2, 6), (2, 9), (2, 6), (1, 1)]
     for i, (kernel_size, dilation_rate) in enumerate(layers):
         name = "tdnn%d" % (i + 1)
@@ -67,7 +62,7 @@ if __name__ == '__main__':
 
     loss_weight_scheduler = LossWeightScheduler(num_epochs=num_epochs)
 
-    model = create_model(850, adaptation_type, 'lda.txt')
+    model = create_model(850, adaptation_type)
     model.compile(
         loss='sparse_categorical_crossentropy',
         optimizer=Adam(),
@@ -76,7 +71,7 @@ if __name__ == '__main__':
     #model.summary()
 
     wrapper = create_model_wrapper(model, batch_size=batch_size)
-    meta = create_maml(wrapper, get_model_weights(model), use_second_order_derivatives=use_second_order_derivatives)
+    meta = create_maml(wrapper, get_model_weights(model), use_second_order_derivatives=use_second_order_derivatives, lda_path='lda.txt')
     meta.save(output_path + "meta.graph.h5")
     meta.compile(
         loss={'adapted': model.loss, 'original': model.loss},

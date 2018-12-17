@@ -9,23 +9,34 @@ from keras.layers import Activation, Input, GaussianNoise, deserialize
 from keras.models import Model, load_model
 from keras.regularizers import l2
 
+from learning_to_adapt.utils import load_lda
+
 from loop import rnn
 from meta import LearningRatePerLayerMetaLearner
+from layers import LDA
 
-def create_maml(wrapper, weights, num_steps=3, use_second_order_derivatives=False, learning_rate=0.001):
+def create_maml(wrapper, weights, num_steps=3, use_second_order_derivatives=False, learning_rate=0.001, lda_path=None):
+  if lda_path is not None:
+    lda, bias = load_lda(lda_path)
+    lda = lda.reshape((5, 40, 200))
+  else:
+    lda = np.eye(200, 200).reshape((5, 40, 200))
+    bias = np.zeros(200)
+
   weights = weights.reshape((1, -1))
   learning_rates = np.array([learning_rate] * len(list(wrapper.param_groups())))
 
   feat_dim = wrapper.feat_dim
-  training_feats = Input(shape=(num_steps, None, None, feat_dim,))
+  training_feats = Input(shape=(num_steps, 20, 78, feat_dim,))
   training_labels = Input(shape=(num_steps, None, None, 1,), dtype='int32')
   testing_feats = Input(shape=(None, None, feat_dim,))
 
+  lda = LDA(feat_dim=40, kernel_size=5, weights=[lda, bias], trainable=False)
   maml = MAML(wrapper, num_steps, use_second_order_derivatives, weights=[weights, learning_rates])
-  original_params, adapted_params = tuple(maml([training_feats, training_labels]))
+  original_params, adapted_params = tuple(maml([lda(training_feats), training_labels]))
 
-  original_predictions = Activation('linear', name='original')(wrapper([original_params, testing_feats]))
-  adapted_predictions = Activation('linear', name='adapted')(wrapper([adapted_params, testing_feats]))
+  original_predictions = Activation('linear', name='original')(wrapper([original_params, lda(testing_feats)]))
+  adapted_predictions = Activation('linear', name='adapted')(wrapper([adapted_params, lda(testing_feats)]))
 
   return Model(
     inputs=[training_feats, training_labels, testing_feats],

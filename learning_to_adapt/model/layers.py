@@ -1,6 +1,46 @@
 import keras.backend as K
 from keras.engine.topology import Layer
 
+class LDA(Layer):
+
+  def __init__(self, feat_dim=40, kernel_size=5, **kwargs):
+    super(LDA, self).__init__(**kwargs)
+
+    self.feat_dim = feat_dim
+    self.kernel_size = kernel_size
+
+  def build(self, input_shape):
+    self.lda = self.add_weight(
+        shape=(self.kernel_size, self.feat_dim, self.feat_dim * self.kernel_size),
+        initializer="ones",
+        name="lda",
+        trainable=self.trainable,
+        regularizer=None,
+        constraint=None)
+
+    self.bias = self.add_weight(
+        shape=(self.feat_dim * self.kernel_size,),
+        initializer="zeros",
+        name="bias",
+        trainable=self.trainable,
+        regularizer=None,
+        constraint=None)
+
+  def call(self, x):
+    shape = K.shape(x)
+    if K.ndim(x) == 4:
+      x = K.reshape(x, (-1, shape[-2], shape[-1]))
+      x = K.conv1d(x, self.lda, data_format="channels_last") + self.bias
+      return K.reshape(x, (shape[0], shape[1], shape[2] - self.kernel_size + 1, self.feat_dim * self.kernel_size))
+    elif K.ndim(x) == 5:
+      x = K.reshape(x, (-1, shape[-2], shape[-1]))
+      x = K.conv1d(x, self.lda, data_format="channels_last") + self.bias
+      return K.reshape(x, (shape[0], shape[1], shape[2], shape[3] - self.kernel_size + 1, self.feat_dim * self.kernel_size))
+
+  def compute_output_shape(self, input_shape):
+    return input_shape[:-1] + (self.feat_dim * self.kernel_size,)
+
+
 class LHUC(Layer):
   """
   Straightforward LHUC just adding a scalar with no activation after a layer.
