@@ -26,12 +26,12 @@ def create_maml(wrapper, weights, num_steps=3, use_second_order_derivatives=Fals
   weights = weights.reshape((1, -1))
   learning_rates = np.array([learning_rate] * len(list(wrapper.param_groups())))
 
-  feat_dim = wrapper.feat_dim
+  feat_dim = 40
   training_feats = Input(shape=(num_steps, 20, 78, feat_dim,))
   training_labels = Input(shape=(num_steps, None, None, 1,), dtype='int32')
   testing_feats = Input(shape=(None, None, feat_dim,))
 
-  lda = LDA(feat_dim=40, kernel_size=5, weights=[lda, bias], trainable=False)
+  lda = LDA(feat_dim=feat_dim, kernel_size=5, weights=[lda, bias], trainable=False)
   maml = MAML(wrapper, num_steps, use_second_order_derivatives, weights=[weights, learning_rates])
   original_params, adapted_params = tuple(maml([lda(training_feats), training_labels]))
 

@@ -89,8 +89,17 @@ def create_model_wrapper(model, batch_size=1):
     layers,
     batch_size)
 
-def create_model(wrapper):
-  x = y = Input(shape=(None, wrapper.feat_dim))
+def create_model(wrapper, lda=None):
+  if lda:
+    x = Input(shape=(None, 40))
+    y = Conv1D(
+      filters=lda.feat_dim * lda.kernel_size,
+      kernel_size=lda.kernel_size,
+      trainable=False,
+      name='lda'
+    )(x)
+  else:
+    x = y = Input(shape=(None, wrapper.feat_dim))
 
   for l in wrapper.layers:
     if l["type"] == "dense":
