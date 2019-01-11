@@ -108,10 +108,10 @@ class MAML(Layer):
     predictions = self.wrapper([self.repeated_params, trainable_params, feats])
 
     if self.use_second_order_derivatives:
-      loss = K.mean(losses.get('categorical_crossentropy')(K.squeeze(K.one_hot(labels, 4208), 3), predictions), axis=[1,2])
+      loss = K.sum(losses.get('categorical_crossentropy')(K.squeeze(K.one_hot(labels, 4208), 3), predictions), axis=[1,2]) / 1000.
       return K.squeeze(K.gradients(loss, [trainable_params]), 0)
     else:
-      loss = K.mean(losses.get(self.wrapper.loss)(labels, predictions), axis=[1,2])
+      loss = K.sum(losses.get(self.wrapper.loss)(labels, predictions), axis=[1,2]) / 1000.
       return K.stop_gradient(K.squeeze(K.gradients(loss, [trainable_params]), 0))
 
   def compute_output_shape(self, input_shape):
