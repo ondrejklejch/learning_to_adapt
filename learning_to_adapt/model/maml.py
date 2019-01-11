@@ -15,7 +15,7 @@ from loop import rnn
 from meta import LearningRatePerLayerMetaLearner
 from layers import LDA
 
-def create_maml(wrapper, weights, num_steps=3, use_second_order_derivatives=False, use_lr_per_step=False, learning_rate=0.001, lda_path=None):
+def create_maml(wrapper, weights, num_steps=3, use_second_order_derivatives=False, use_lr_per_step=False, use_kld_regularization=False, learning_rate=0.001, lda_path=None):
   if lda_path is not None:
     lda, bias = load_lda(lda_path)
     lda = lda.reshape((5, 40, 200))
@@ -24,11 +24,17 @@ def create_maml(wrapper, weights, num_steps=3, use_second_order_derivatives=Fals
     bias = np.zeros(200)
 
   weights = weights.reshape((1, -1))
+  kld = np.zeros((1,))
 
   if use_lr_per_step:
     learning_rates = learning_rate * np.ones((num_steps, len(list(wrapper.param_groups()))))
   else:
     learning_rates = learning_rate * np.ones((len(list(wrapper.param_groups())),))
+
+  if use_kld_regularization:
+    maml_weights = [weights, learning_rates, kld]
+  else:
+    maml_weights = [weights, learning_rates]
 
   feat_dim = 40
   training_feats = Input(shape=(num_steps, 20, 78, feat_dim,))
@@ -36,7 +42,7 @@ def create_maml(wrapper, weights, num_steps=3, use_second_order_derivatives=Fals
   testing_feats = Input(shape=(None, None, feat_dim,))
 
   lda = LDA(feat_dim=feat_dim, kernel_size=5, weights=[lda, bias], trainable=False)
-  maml = MAML(wrapper, num_steps, use_second_order_derivatives, use_lr_per_step, weights=[weights, learning_rates])
+  maml = MAML(wrapper, num_steps, use_second_order_derivatives, use_lr_per_step, use_kld_regularization, weights=maml_weights)
   original_params, adapted_params = tuple(maml([lda(training_feats), training_labels]))
 
   original_predictions = Activation('linear', name='original')(wrapper([original_params, lda(testing_feats)]))
@@ -62,13 +68,14 @@ def create_adapter(wrapper, learning_rates):
 
 class MAML(Layer):
 
-  def __init__(self, wrapper, num_steps=3, use_second_order_derivatives=False, use_lr_per_step=False, **kwargs):
+  def __init__(self, wrapper, num_steps=3, use_second_order_derivatives=False, use_lr_per_step=False, use_kld_regularization=False, **kwargs):
     super(MAML, self).__init__(**kwargs)
 
     self.wrapper = wrapper
     self.num_steps = num_steps
     self.use_second_order_derivatives = use_second_order_derivatives
     self.use_lr_per_step = use_lr_per_step
+    self.use_kld_regularization = use_kld_regularization
 
     self.param_groups = list(wrapper.param_groups())
     self.num_param_groups = len(self.param_groups)
@@ -95,11 +102,22 @@ class MAML(Layer):
         initializer='zeros',
       )
 
+    if self.use_kld_regularization:
+      self.kld_weight = self.add_weight(
+        shape=(1,),
+        name='kld',
+        initializer='zeros',
+        trainable=self.use_kld_regularization
+      )
+
   def call(self, inputs):
     feats, labels = inputs
 
     self.repeated_params = K.squeeze(K.repeat(self.params, K.shape(feats)[0]), 0)
     trainable_params = self.wrapper.get_trainable_params(self.repeated_params)
+
+    if self.use_kld_regularization:
+      self.original_predictions = self.wrapper([self.repeated_params, feats[:,0]])
 
     for i in range(self.num_steps):
       trainable_params = self.step(feats[:,i], labels[:,i], trainable_params, step=i)
@@ -124,13 +142,24 @@ class MAML(Layer):
 
   def compute_gradients(self, trainable_params, feats, labels):
     predictions = self.wrapper([self.repeated_params, trainable_params, feats])
+    kld_gradients = self.compute_kld_gradients(trainable_params, predictions)
 
     if self.use_second_order_derivatives:
       loss = K.sum(losses.get('categorical_crossentropy')(K.squeeze(K.one_hot(labels, 4208), 3), predictions), axis=[1,2]) / 1000.
-      return K.squeeze(K.gradients(loss, [trainable_params]), 0)
+      return K.squeeze(K.gradients(loss, [trainable_params]), 0) + kld_gradients
     else:
       loss = K.sum(losses.get(self.wrapper.loss)(labels, predictions), axis=[1,2]) / 1000.
-      return K.stop_gradient(K.squeeze(K.gradients(loss, [trainable_params]), 0))
+      return K.stop_gradient(K.squeeze(K.gradients(loss, [trainable_params]), 0)) + kld_gradients
+
+  def compute_kld_gradients(self, trainable_params, predictions):
+    if not self.use_kld_regularization:
+      return 0
+
+    kld = K.mean(losses.get('kld')(K.stop_gradient(self.original_predictions), predictions), axis=[1,2])
+    if self.use_second_order_derivatives:
+      return self.kld_weight * K.squeeze(K.gradients(kld, [trainable_params]), 0)
+    else:
+      return self.kld_weight * K.stop_gradient(K.squeeze(K.gradients(kld, [trainable_params]), 0))
 
   def compute_output_shape(self, input_shape):
     return [(input_shape[0][0], self.num_params), (input_shape[0][0], self.num_params)]
@@ -143,10 +172,15 @@ class MAML(Layer):
       },
       'num_steps': self.num_steps,
       'use_second_order_derivatives': self.use_second_order_derivatives,
+      'use_lr_per_step': self.use_lr_per_step,
+      'use_kld_regularization': self.use_kld_regularization,
     }
 
   @classmethod
   def from_config(cls, config, custom_objects=None):
     wrapper = deserialize(config.pop('wrapper'), custom_objects=custom_objects)
+    use_second_order_derivatives = config.get('use_second_order_derivatives', False)
+    use_lr_per_step = config.get('use_lr_per_step', False)
+    use_kld_regularization = config.get('use_kld_regularization', False)
 
-    return cls(wrapper, config.get('num_steps', 3), config.get('use_second_order_derivatives', False))
+    return cls(wrapper, config.get('num_steps', 3), use_second_order_derivatives, use_lr_per_step, use_kld_regularization)
