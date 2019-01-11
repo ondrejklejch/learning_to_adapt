@@ -15,7 +15,7 @@ from loop import rnn
 from meta import LearningRatePerLayerMetaLearner
 from layers import LDA
 
-def create_maml(wrapper, weights, num_steps=3, use_second_order_derivatives=False, learning_rate=0.001, lda_path=None):
+def create_maml(wrapper, weights, num_steps=3, use_second_order_derivatives=False, use_lr_per_step=False, learning_rate=0.001, lda_path=None):
   if lda_path is not None:
     lda, bias = load_lda(lda_path)
     lda = lda.reshape((5, 40, 200))
@@ -24,7 +24,11 @@ def create_maml(wrapper, weights, num_steps=3, use_second_order_derivatives=Fals
     bias = np.zeros(200)
 
   weights = weights.reshape((1, -1))
-  learning_rates = np.array([learning_rate] * len(list(wrapper.param_groups())))
+
+  if use_lr_per_step:
+    learning_rates = learning_rate * np.ones((num_steps, len(list(wrapper.param_groups()))))
+  else:
+    learning_rates = learning_rate * np.ones((len(list(wrapper.param_groups())),))
 
   feat_dim = 40
   training_feats = Input(shape=(num_steps, 20, 78, feat_dim,))
@@ -32,7 +36,7 @@ def create_maml(wrapper, weights, num_steps=3, use_second_order_derivatives=Fals
   testing_feats = Input(shape=(None, None, feat_dim,))
 
   lda = LDA(feat_dim=feat_dim, kernel_size=5, weights=[lda, bias], trainable=False)
-  maml = MAML(wrapper, num_steps, use_second_order_derivatives, weights=[weights, learning_rates])
+  maml = MAML(wrapper, num_steps, use_second_order_derivatives, use_lr_per_step, weights=[weights, learning_rates])
   original_params, adapted_params = tuple(maml([lda(training_feats), training_labels]))
 
   original_predictions = Activation('linear', name='original')(wrapper([original_params, lda(testing_feats)]))
@@ -58,12 +62,13 @@ def create_adapter(wrapper, learning_rates):
 
 class MAML(Layer):
 
-  def __init__(self, wrapper, num_steps=3, use_second_order_derivatives=False, **kwargs):
+  def __init__(self, wrapper, num_steps=3, use_second_order_derivatives=False, use_lr_per_step=False, **kwargs):
     super(MAML, self).__init__(**kwargs)
 
     self.wrapper = wrapper
     self.num_steps = num_steps
     self.use_second_order_derivatives = use_second_order_derivatives
+    self.use_lr_per_step = use_lr_per_step
 
     self.param_groups = list(wrapper.param_groups())
     self.num_param_groups = len(self.param_groups)
@@ -77,11 +82,18 @@ class MAML(Layer):
       initializer='uniform',
     )
 
-    self.learning_rate = self.add_weight(
-      shape=(self.num_param_groups,),
-      name='learning_rate',
-      initializer='zeros',
-    )
+    if self.use_lr_per_step:
+      self.learning_rate = self.add_weight(
+        shape=(self.num_steps, self.num_param_groups,),
+        name='learning_rate',
+        initializer='zeros',
+      )
+    else:
+      self.learning_rate = self.add_weight(
+        shape=(self.num_param_groups,),
+        name='learning_rate',
+        initializer='zeros',
+      )
 
   def call(self, inputs):
     feats, labels = inputs
@@ -90,17 +102,23 @@ class MAML(Layer):
     trainable_params = self.wrapper.get_trainable_params(self.repeated_params)
 
     for i in range(self.num_steps):
-      trainable_params = self.step(feats[:,i], labels[:,i], trainable_params)
+      trainable_params = self.step(feats[:,i], labels[:,i], trainable_params, step=i)
 
     return [self.repeated_params, self.wrapper.merge_params(self.repeated_params, trainable_params)]
 
-  def step(self, feats, labels, params):
+  def step(self, feats, labels, params, step):
     gradients = self.compute_gradients(params, feats, labels)
 
     new_params = []
     for param_group, indices in enumerate(self.param_groups):
       s, e = indices
-      new_params.append(params[:, s:e] - self.learning_rate[param_group] * gradients[:, s:e])
+
+      if self.use_lr_per_step:
+        learning_rate = self.learning_rate[step, param_group]
+      else:
+        learning_rate = self.learning_rate[param_group]
+
+      new_params.append(params[:, s:e] - learning_rate * gradients[:, s:e])
 
     return K.concatenate(new_params, axis=1)
 
