@@ -25,7 +25,7 @@ class TestWrapper(unittest.TestCase):
   def testBatchForwardPass(self):
     batch_size = 1
     model = self.build_convolutional_model()
-    wrapper = self.build_wrapped_model(model)
+    wrapper = self.build_wrapped_model(model, batch_size=2)
 
     params = np.array([
         [1., 2., 3., 4., 5., 6., 1., 1.],
@@ -95,8 +95,8 @@ class TestWrapper(unittest.TestCase):
     expected_groups = [(0, 6)]
     self.assertEqual(expected_groups, list(wrapper.param_groups()))
 
-  def build_wrapped_model(self, model):
-    wrapper = create_model_wrapper(model)
+  def build_wrapped_model(self, model, batch_size=1):
+    wrapper = create_model_wrapper(model, batch_size=batch_size)
     params = Input(shape=(wrapper.num_params,))
     trainable_params = Input(shape=(wrapper.num_trainable_params,))
     x = Input(shape=K.int_shape(model.inputs[0]))
