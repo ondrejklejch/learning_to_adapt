@@ -11,7 +11,7 @@ from loop import rnn
 from wrapper import ModelWrapper, create_model_wrapper
 
 
-def create_meta_learner(wrapper, units=20, meta_learner_type='full'):
+def create_meta_learner(wrapper, units=20, meta_learner_type='full', num_steps=3, use_lr_per_step=False):
   feat_dim = wrapper.feat_dim
   num_params = wrapper.num_params
 
@@ -21,7 +21,7 @@ def create_meta_learner(wrapper, units=20, meta_learner_type='full'):
   params = Input(shape=(num_params,))
 
   if meta_learner_type == 'lr_per_layer':
-    meta_learner = LearningRatePerLayerMetaLearner(wrapper)
+    meta_learner = LearningRatePerLayerMetaLearner(wrapper, num_steps, use_lr_per_step)
   elif meta_learner_type == 'full':
     meta_learner = MetaLearner(wrapper, units)
   else:
@@ -238,20 +238,29 @@ class MetaLearner(Layer):
 
 class LearningRatePerLayerMetaLearner(Layer):
 
-  def __init__(self, wrapper, **kwargs):
+  def __init__(self, wrapper, num_steps=3, use_lr_per_step=False, **kwargs):
     super(LearningRatePerLayerMetaLearner, self).__init__(**kwargs)
 
     self.wrapper = wrapper
+    self.num_steps = num_steps
+    self.use_lr_per_step = use_lr_per_step
     self.param_groups = list(wrapper.param_groups())
     self.num_param_groups = len(self.param_groups)
     self.num_trainable_params = self.wrapper.num_trainable_params
 
   def build(self, input_shapes):
-    self.learning_rate = self.add_weight(
-      shape=(self.num_param_groups, 1),
-      name='learning_rate',
-      initializer=Constant(0.001),
-    )
+    if self.use_lr_per_step:
+      self.learning_rate = self.add_weight(
+        shape=(self.num_steps, self.num_param_groups, 1),
+        name='learning_rate',
+        initializer=Constant(0.001),
+      )
+    else:
+      self.learning_rate = self.add_weight(
+        shape=(self.num_param_groups, 1),
+        name='learning_rate',
+        initializer=Constant(0.001),
+      )
 
   def call(self, inputs):
     feats, labels, params = inputs
@@ -259,38 +268,33 @@ class LearningRatePerLayerMetaLearner(Layer):
     self.params = params
     trainable_params = self.wrapper.get_trainable_params(params)
 
-    last_output, _, _ = rnn(
-      step_function=self.step,
-      inputs=[feats, labels],
-      initial_states=self.get_initital_state(trainable_params),
-    )
+    for i in range(self.num_steps):
+      trainable_params = self.step(feats[:,i], labels[:,i], trainable_params, step=i)
 
-    new_params = K.transpose(last_output[0])
-    return self.wrapper.merge_params(self.params, new_params)
+    return self.wrapper.merge_params(self.params, trainable_params)
 
-  def get_initital_state(self, params):
-    return  [K.transpose(params)]
-
-  def compute_output_shape(self, input_shape):
-    return input_shape[2]
-
-  def step(self, inputs, states):
-    feats, labels = inputs
-    params = states[0]
+  def step(self, feats, labels, params, step):
     gradients = self.compute_gradients(params, feats, labels)
 
     new_params = []
     for param_group, indices in enumerate(self.param_groups):
       s, e = indices
-      new_params.append(params[s:e] - self.learning_rate[param_group] * gradients[s:e])
 
-    new_params = K.concatenate(new_params, axis=0)
+      if self.use_lr_per_step:
+        learning_rate = self.learning_rate[step, param_group]
+      else:
+        learning_rate = self.learning_rate[param_group]
 
-    return [new_params], [new_params]
+      new_params.append(params[:, s:e] - learning_rate * gradients[:, s:e])
+
+    return K.concatenate(new_params, axis=1)
+
+  def compute_output_shape(self, input_shape):
+    return input_shape[2]
 
   def compute_gradients(self, trainable_params, feats, labels):
-    predictions = self.wrapper([self.params, K.transpose(trainable_params), feats])
-    loss = K.mean(losses.get(self.wrapper.loss)(labels, predictions))
+    predictions = self.wrapper([self.params, trainable_params, feats])
+    loss = K.sum(losses.get(self.wrapper.loss)(labels, predictions)) / 1000.
     return K.stop_gradient(K.squeeze(K.gradients(loss, [trainable_params]), 0))
 
   def get_config(self):
@@ -298,11 +302,15 @@ class LearningRatePerLayerMetaLearner(Layer):
       'wrapper': {
         'class_name': self.wrapper.__class__.__name__,
         'config': self.wrapper.get_config()
-      }
+      },
+      'num_steps': self.num_steps,
+      'use_lr_per_step': self.use_lr_per_step
     }
 
   @classmethod
   def from_config(cls, config, custom_objects=None):
     wrapper = deserialize(config.pop('wrapper'), custom_objects=custom_objects)
+    num_steps = config.get('num_steps', 3)
+    use_lr_per_step = config.get('use_lr_per_step', False)
 
-    return cls(wrapper)
+    return cls(wrapper, num_steps, use_lr_per_step)
