@@ -34,7 +34,7 @@ def converted_models_produce_correct_output(m_in, m_out):
     # Workaround for MAML models with wrong input dimensions
     maml = m_in.get_layer('maml_1')
     maml.wrapper.batch_size = 1
-    m_in = create_maml(maml.wrapper, weights[2], maml.num_steps, maml.use_second_order_derivatives)
+    m_in = create_maml(maml.wrapper, weights[2], maml.num_steps, maml.use_second_order_derivatives, maml.use_lr_per_step, maml.use_kld_regularization)
     m_in.load_weights(weights_in)
 
     reference_predictions = m_in.predict([adapt_x, adapt_y, test_x])[1]
@@ -64,7 +64,8 @@ if __name__ == '__main__':
       model_weights = weights[0][0]
       maml_weights = weights[1].reshape((-1, 1))
 
-    m_out = create_model(m_in.get_layer('maml_1').wrapper, m_in.get_layer('lda_1'))
+    maml = m_in.get_layer('maml_1')
+    m_out = create_model(maml.wrapper, m_in.get_layer('lda_1'))
     set_model_weights(m_out, model_weights)
 
     assert converted_models_produce_correct_output(m_in, m_out)
@@ -73,7 +74,7 @@ if __name__ == '__main__':
     m_out.save(model_out)
     m_out.summary()
 
-    adapter = create_adapter(create_model_wrapper(m_out), maml_weights)
+    adapter = create_adapter(create_model_wrapper(m_out), maml.num_steps, maml.use_lr_per_step, maml_weights)
     adapter.save(meta_out)
     adapter.summary()
 

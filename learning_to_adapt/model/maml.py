@@ -53,7 +53,7 @@ def create_maml(wrapper, weights, num_steps=3, use_second_order_derivatives=Fals
     outputs=[adapted_predictions, original_predictions]
   )
 
-def create_adapter(wrapper, learning_rates):
+def create_adapter(wrapper, num_steps, use_lr_per_step, learning_rates):
   num_params = wrapper.num_params
   feat_dim = wrapper.feat_dim
 
@@ -61,7 +61,12 @@ def create_adapter(wrapper, learning_rates):
   training_feats = Input(shape=(None, None, None, feat_dim,))
   training_labels = Input(shape=(None, None, None, 1,))
 
-  meta = LearningRatePerLayerMetaLearner(wrapper, weights=[learning_rates])
+  if use_lr_per_step:
+    learning_rates = learning_rates.reshape((num_steps, -1, 1))
+  else:
+    learning_rates = learning_rates.reshape((-1, 1))
+
+  meta = LearningRatePerLayerMetaLearner(wrapper, num_steps, use_lr_per_step, weights=[learning_rates])
   adapted_params = meta([training_feats, training_labels, params])
 
   return Model(inputs=[params, training_feats, training_labels], outputs=[adapted_params])
