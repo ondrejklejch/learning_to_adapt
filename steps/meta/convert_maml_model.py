@@ -58,11 +58,9 @@ if __name__ == '__main__':
     try:
       lda = m_in.get_layer('lda_1')
       model_weights = np.concatenate([weights[0].flatten(), weights[1].flatten(), weights[2].flatten()])
-      maml_weights = weights[3].reshape((-1, 1))
     except ValueError:
       lda = None
       model_weights = weights[0][0]
-      maml_weights = weights[1].reshape((-1, 1))
 
     maml = m_in.get_layer('maml_1')
     m_out = create_model(maml.wrapper, m_in.get_layer('lda_1'))
@@ -74,8 +72,8 @@ if __name__ == '__main__':
     m_out.save(model_out)
     m_out.summary()
 
-    adapter = create_adapter(create_model_wrapper(m_out), maml.num_steps, maml.use_lr_per_step, maml_weights)
+    adapter = create_adapter(create_model_wrapper(m_out), maml.num_steps, maml.use_lr_per_step, maml.use_kld_regularization, maml.get_weights()[1:])
     adapter.save(meta_out)
     adapter.summary()
 
-    print maml_weights
+    print maml.get_weights()[1:]

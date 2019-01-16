@@ -12,7 +12,6 @@ from keras.regularizers import l2
 from learning_to_adapt.utils import load_lda
 
 from loop import rnn
-from meta import LearningRatePerLayerMetaLearner
 from layers import LDA
 
 def create_maml(wrapper, weights, num_steps=3, use_second_order_derivatives=False, use_lr_per_step=False, use_kld_regularization=False, learning_rate=0.001, lda_path=None):
@@ -42,7 +41,7 @@ def create_maml(wrapper, weights, num_steps=3, use_second_order_derivatives=Fals
   testing_feats = Input(shape=(None, None, feat_dim,))
 
   lda = LDA(feat_dim=feat_dim, kernel_size=5, weights=[lda, bias], trainable=False)
-  maml = MAML(wrapper, num_steps, use_second_order_derivatives, use_lr_per_step, use_kld_regularization, weights=maml_weights)
+  maml = MAML(wrapper, num_steps, use_second_order_derivatives, use_lr_per_step, use_kld_regularization, train_params=True, weights=maml_weights)
   original_params, adapted_params = tuple(maml([lda(training_feats), training_labels]))
 
   original_predictions = Activation('linear', name='original')(wrapper([original_params, lda(testing_feats)]))
@@ -53,7 +52,7 @@ def create_maml(wrapper, weights, num_steps=3, use_second_order_derivatives=Fals
     outputs=[adapted_predictions, original_predictions]
   )
 
-def create_adapter(wrapper, num_steps, use_lr_per_step, learning_rates):
+def create_adapter(wrapper, num_steps, use_lr_per_step, use_kld_regularization, weights):
   num_params = wrapper.num_params
   feat_dim = wrapper.feat_dim
 
@@ -61,19 +60,14 @@ def create_adapter(wrapper, num_steps, use_lr_per_step, learning_rates):
   training_feats = Input(shape=(None, None, None, feat_dim,))
   training_labels = Input(shape=(None, None, None, 1,))
 
-  if use_lr_per_step:
-    learning_rates = learning_rates.reshape((num_steps, -1, 1))
-  else:
-    learning_rates = learning_rates.reshape((-1, 1))
-
-  meta = LearningRatePerLayerMetaLearner(wrapper, num_steps, use_lr_per_step, weights=[learning_rates])
-  adapted_params = meta([training_feats, training_labels, params])
+  meta = MAML(wrapper, num_steps, use_lr_per_step=use_lr_per_step, use_kld_regularization=use_kld_regularization, train_params=False, weights=weights)
+  adapted_params = meta([training_feats, training_labels, params])[1]
 
   return Model(inputs=[params, training_feats, training_labels], outputs=[adapted_params])
 
 class MAML(Layer):
 
-  def __init__(self, wrapper, num_steps=3, use_second_order_derivatives=False, use_lr_per_step=False, use_kld_regularization=False, **kwargs):
+  def __init__(self, wrapper, num_steps=3, use_second_order_derivatives=False, use_lr_per_step=False, use_kld_regularization=False, train_params=True, **kwargs):
     super(MAML, self).__init__(**kwargs)
 
     self.wrapper = wrapper
@@ -81,6 +75,7 @@ class MAML(Layer):
     self.use_second_order_derivatives = use_second_order_derivatives
     self.use_lr_per_step = use_lr_per_step
     self.use_kld_regularization = use_kld_regularization
+    self.train_params = train_params
 
     self.param_groups = list(wrapper.param_groups())
     self.num_param_groups = len(self.param_groups)
@@ -88,11 +83,12 @@ class MAML(Layer):
     self.num_trainable_params = self.wrapper.num_trainable_params
 
   def build(self, input_shapes):
-    self.params = self.add_weight(
-      shape=(1, self.num_params),
-      name='params',
-      initializer='uniform',
-    )
+    if self.train_params:
+      self.params = self.add_weight(
+        shape=(1, self.num_params),
+        name='params',
+        initializer='uniform',
+      )
 
     if self.use_lr_per_step:
       self.learning_rate = self.add_weight(
@@ -116,9 +112,13 @@ class MAML(Layer):
       )
 
   def call(self, inputs):
-    feats, labels = inputs
+    if self.train_params:
+      feats, labels = inputs
+      params = self.params
+    else:
+      feats, labels, params = inputs
 
-    self.repeated_params = K.squeeze(K.repeat(self.params, K.shape(feats)[0]), 0)
+    self.repeated_params = K.squeeze(K.repeat(params, K.shape(feats)[0]), 0)
     trainable_params = self.wrapper.get_trainable_params(self.repeated_params)
 
     if self.use_kld_regularization:
@@ -179,6 +179,7 @@ class MAML(Layer):
       'use_second_order_derivatives': self.use_second_order_derivatives,
       'use_lr_per_step': self.use_lr_per_step,
       'use_kld_regularization': self.use_kld_regularization,
+      'train_params': self.train_params,
     }
 
   @classmethod
@@ -187,5 +188,6 @@ class MAML(Layer):
     use_second_order_derivatives = config.get('use_second_order_derivatives', False)
     use_lr_per_step = config.get('use_lr_per_step', False)
     use_kld_regularization = config.get('use_kld_regularization', False)
+    train_params = config.get('train_params', True)
 
-    return cls(wrapper, config.get('num_steps', 3), use_second_order_derivatives, use_lr_per_step, use_kld_regularization)
+    return cls(wrapper, config.get('num_steps', 3), use_second_order_derivatives, use_lr_per_step, use_kld_regularization, train_params)

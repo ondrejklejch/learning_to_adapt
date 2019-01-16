@@ -8,6 +8,7 @@ from keras.models import Model, load_model
 from keras.regularizers import l1
 
 from loop import rnn
+from maml import MAML
 from wrapper import ModelWrapper, create_model_wrapper
 
 
@@ -40,7 +41,8 @@ def load_meta_learner(model, path):
   custom_objects={
     'MetaLearner': MetaLearner,
     'ModelWrapper': ModelWrapper,
-    'LearningRatePerLayerMetaLearner': LearningRatePerLayerMetaLearner
+    'LearningRatePerLayerMetaLearner': LearningRatePerLayerMetaLearner,
+    'MAML': MAML,
   }
 
   return load_model(path, custom_objects=custom_objects)
