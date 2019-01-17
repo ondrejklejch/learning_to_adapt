@@ -102,6 +102,41 @@ class Multiply(Layer):
     return input_shapes[0]
 
 
+class SparseMultiply(Layer):
+
+  def __init__(self, beta=2./3., gamma=-0.1, delta=1.1, l0_regularization=0.1/850, **kwargs):
+    super(SparseMultiply, self).__init__(**kwargs)
+
+    self.beta = beta
+    self.gamma = gamma
+    self.delta = delta
+    self.l0_regularization = l0_regularization
+
+  def call(self, inputs):
+    x = inputs[0]
+    loga = inputs[1]
+
+    return K.in_train_phase(self.call_training(loga, x), self.call_inference(loga, x))
+
+  def call_training(self, loga, x):
+    u = K.random_uniform((850,))
+    s = K.sigmoid((K.log(u) - K.log(1 - u) + loga) / self.beta)
+    return self._scale(s) * x
+
+  def call_inference(self, loga, x):
+    s = K.sigmoid(loga)
+    return self._scale(s) * x
+
+  def _scale(self, s):
+    return K.minimum(1., K.maximum(0., s * (self.delta - self.gamma) + self.gamma))
+
+  def regularizer(self, loga):
+    return 1./256 * self.l0_regularization * K.sum(K.sigmoid(loga - self.beta * K.log(-self.gamma / self.delta)))
+
+  def compute_output_shape(self, input_shapes):
+    return input_shapes[0]
+
+
 class SDBatchNormalization(Layer):
 
   def __init__(self, num_speakers=9572, momentum=0.99, epsilon=1e-3, **kwargs):
