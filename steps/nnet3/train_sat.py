@@ -6,7 +6,7 @@ from keras.models import Model
 from keras.layers import Input, Activation, Conv1D, Embedding, BatchNormalization
 from keras.optimizers import Adam
 
-from learning_to_adapt.model import LHUC, Renorm, Multiply, SparseMultiply
+from learning_to_adapt.model import LHUC, Renorm, Multiply, SparseMultiply, L0
 from learning_to_adapt.utils import load_dataset, load_lda, load_utt_to_spk, load_utt_to_pdfs
 
 import keras
@@ -55,7 +55,8 @@ def create_sparse_lhuc_sat_model(hidden_dim=350, lda_path=None, num_spks=None):
         x = BatchNormalization(name="%s.batchnorm" % name)(x)
 
         sparse_multiply = SparseMultiply(name="sparse_multiply%d" % (i + 1))
-        sparse_lhuc = Embedding(num_spks, hidden_dim, embeddings_initializer='zeros', activity_regularizer=sparse_multiply.regularizer, name="sparse_lhuc%d" % (i + 1))(spk_id)
+        regularizer = L0(sparse_multiply.l0_regularization, sparse_multiply.beta, sparse_multiply.gamma, sparse_multiply.delta)
+        sparse_lhuc = Embedding(num_spks, hidden_dim, embeddings_initializer='zeros', activity_regularizer=regularizer, name="sparse_lhuc%d" % (i + 1))(spk_id)
         x = sparse_multiply([x, sparse_lhuc])
 
         lhuc = Embedding(num_spks, hidden_dim, embeddings_initializer='ones', name="lhuc%d" % (i + 1))(spk_id)

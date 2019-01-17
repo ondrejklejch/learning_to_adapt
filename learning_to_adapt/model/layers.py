@@ -130,9 +130,6 @@ class SparseMultiply(Layer):
   def _scale(self, s):
     return K.minimum(1., K.maximum(0., s * (self.delta - self.gamma) + self.gamma))
 
-  def regularizer(self, loga):
-    return 1./256 * self.l0_regularization * K.sum(K.sigmoid(loga - self.beta * K.log(-self.gamma / self.delta)))
-
   def compute_output_shape(self, input_shapes):
     return input_shapes[0]
 
