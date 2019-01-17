@@ -25,7 +25,7 @@ def create_model(hidden_dim=350, adaptation_type='ALL'):
     for i, (kernel_size, dilation_rate) in enumerate(layers):
         name = "tdnn%d" % (i + 1)
         x = Conv1D(hidden_dim, kernel_size=kernel_size, dilation_rate=dilation_rate, activation="relu", name="%s.affine" % name, trainable=adaptation_type == 'ALL')(x)
-        x = UttBatchNormalization(name="lhuc.%s.batchnorm" % name, trainable=adaptation_type == 'LHUC')(x)
+        x = UttBatchNormalization(name="lhuc.%s.batchnorm" % name, trainable=adaptation_type in ['ALL', 'LHUC'])(x)
 
     y = Conv1D(4208, kernel_size=1, activation="softmax", name="output.affine", trainable=adaptation_type == 'ALL')(x)
 
@@ -57,8 +57,10 @@ if __name__ == '__main__':
     right_context = int(sys.argv[9])
 
     num_epochs = 400
-    batch_size = 2
-    use_second_order_derivatives = True
+    batch_size = 4
+    use_second_order_derivatives = False
+    use_lr_per_step = False
+    use_kld_regularization = False
 
     loss_weight_scheduler = LossWeightScheduler(num_epochs=num_epochs)
 
@@ -71,11 +73,10 @@ if __name__ == '__main__':
     #model.summary()
 
     wrapper = create_model_wrapper(model, batch_size=batch_size)
-    meta = create_maml(wrapper, get_model_weights(model), use_second_order_derivatives=use_second_order_derivatives, lda_path='lda.txt')
+    meta = create_maml(wrapper, get_model_weights(model), use_second_order_derivatives=use_second_order_derivatives, use_lr_per_step=use_lr_per_step, use_kld_regularization=use_kld_regularization, lda_path='lda.txt')
     meta.save(output_path + "meta.graph.h5")
     meta.compile(
         loss={'adapted': model.loss, 'original': model.loss},
-        loss_weights={'adapted': loss_weight_scheduler.adapted, 'original': loss_weight_scheduler.original},
         optimizer=Adam(),
         metrics={'adapted': 'accuracy', 'original': 'accuracy'}
     )
