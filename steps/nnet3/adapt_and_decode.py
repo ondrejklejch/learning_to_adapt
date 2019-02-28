@@ -91,6 +91,8 @@ if __name__ == '__main__':
 
     with open(counts, 'r') as f:
         counts = np.fromstring(f.read().strip(" []"), dtype='float32', sep=' ')
+        counts[counts == 0] = 1e-5
+
     priors = counts / np.sum(counts)
 
     with kaldi_io.SequentialBaseFloatMatrixReader("ark:-") as arkIn, \

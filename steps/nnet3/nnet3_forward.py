@@ -39,6 +39,7 @@ if __name__ == '__main__':
     if os.path.isfile(counts):
         with open(counts, 'r') as f:
             counts = np.fromstring(f.read().strip(" []"), dtype='float32', sep=' ')
+            counts[counts == 0] = 1e-5
         priors = counts / np.sum(counts)
     else:
         priors = 1
