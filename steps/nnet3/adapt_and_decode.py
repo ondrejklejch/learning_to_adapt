@@ -9,7 +9,7 @@ import keras
 import kaldi_io
 import tensorflow as tf
 
-from learning_to_adapt.model import FeatureTransform, LHUC, Renorm, UttBatchNormalization, load_meta_learner, get_model_weights, set_model_weights
+from learning_to_adapt.model import load_model, load_meta_learner, get_model_weights, set_model_weights
 from learning_to_adapt.utils import load_utt_to_pdfs, pad_feats, create_chunks
 
 config = tf.ConfigProto()
@@ -87,7 +87,7 @@ if __name__ == '__main__':
         raise TypeError ('Unsupported model type. Please use h5 format. Update Keras if needed')
 
     ## Load model
-    m = keras.models.load_model(model, custom_objects={'FeatureTransform': FeatureTransform, 'LHUC': LHUC, 'Renorm': Renorm, 'UttBatchNormalization': UttBatchNormalization})
+    m = load_model(model)
 
     with open(counts, 'r') as f:
         counts = np.fromstring(f.read().strip(" []"), dtype='float32', sep=' ')

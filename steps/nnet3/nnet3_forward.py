@@ -10,7 +10,7 @@ import keras
 import kaldi_io
 import tensorflow as tf
 
-from learning_to_adapt.model import FeatureTransform, LHUC, Renorm, UttBatchNormalization
+from learning_to_adapt.model import load_model
 from learning_to_adapt.utils import pad_feats
 from learning_to_adapt.optimizers import AdamW
 
@@ -35,14 +35,7 @@ if __name__ == '__main__':
     if not model.endswith('.h5'):
         raise TypeError ('Unsupported model type. Please use h5 format. Update Keras if needed')
 
-    ## Load model
-    m = keras.models.load_model(model, custom_objects={
-        'FeatureTransform': FeatureTransform,
-        'LHUC': LHUC,
-        'Renorm': Renorm,
-        'UttBatchNormalization': UttBatchNormalization,
-        'AdamW': AdamW})
-
+    m = load_model(model)
     if os.path.isfile(counts):
         with open(counts, 'r') as f:
             counts = np.fromstring(f.read().strip(" []"), dtype='float32', sep=' ')

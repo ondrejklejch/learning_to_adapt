@@ -8,21 +8,7 @@ import tensorflow as tf
 
 from keras.models import Model
 from keras.layers import Input
-from learning_to_adapt.model import L0, FeatureTransform, LHUC, SparseLHUC, Renorm, Multiply, SparseMultiply, SDBatchNormalization, UttBatchNormalization
-
-
-def load_model(path):
-    return keras.models.load_model(path, custom_objects={
-        'FeatureTransform': FeatureTransform,
-        'LHUC': LHUC,
-        'SparseLHUC': SparseLHUC,
-        'Renorm': Renorm,
-        'Multiply': Multiply,
-        'SparseMultiply': SparseMultiply,
-        'SDBatchNormalization': SDBatchNormalization,
-        'UttBatchNormalization': UttBatchNormalization,
-        'L0': L0,
-    })
+from learning_to_adapt.model import load_model, LHUC, SparseLHUC, SDBatchNormalization, UttBatchNormalization
 
 
 if __name__ == '__main__':

@@ -8,21 +8,7 @@ import tensorflow as tf
 
 from keras.models import Model
 from keras.layers import Input
-from learning_to_adapt.model import FeatureTransform, LDA, LHUC, Renorm, Multiply, SDBatchNormalization, UttBatchNormalization, MAML, ModelWrapper, create_maml, create_model, create_adapter, create_model_wrapper, set_model_weights
-
-
-def load_model(path):
-    return keras.models.load_model(path, compile=False, custom_objects={
-        'FeatureTransform': FeatureTransform,
-        'LDA': LDA,
-        'LHUC': LHUC,
-        'Renorm': Renorm,
-        'Multiply': Multiply,
-        'SDBatchNormalization': SDBatchNormalization,
-        'UttBatchNormalization': UttBatchNormalization,
-        'MAML': MAML,
-        'ModelWrapper': ModelWrapper,
-    })
+from learning_to_adapt.model import load_model, create_maml, create_model, create_adapter, create_model_wrapper, set_model_weights
 
 
 def converted_models_produce_correct_output(m_in, m_out):
