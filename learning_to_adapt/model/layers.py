@@ -60,6 +60,43 @@ class LHUC(Layer):
   def compute_output_shape(self, input_shape):
     return input_shape
 
+class SparseLHUC(Layer):
+
+  def __init__(self, beta=2./3., gamma=-0.1, delta=1.1, regularizer=None, **kwargs):
+    super(SparseLHUC, self).__init__(**kwargs)
+
+    self.beta = beta
+    self.gamma = gamma
+    self.delta = delta
+    self.regularizer = regularizer
+
+  def build(self, input_shape):
+    self.loga = self.add_weight(
+        shape=(input_shape[-1],),
+        initializer="zeros",
+        name="loga",
+        trainable=self.trainable,
+        regularizer=self.regularizer,
+        constraint=None)
+
+  def call(self, x):
+    return K.in_train_phase(self.call_training(self.loga, x), self.call_inference(self.loga, x))
+
+  def call_training(self, loga, x):
+    u = K.random_uniform(K.shape(loga))
+    s = K.sigmoid((K.log(u) - K.log(1 - u) + loga) / self.beta)
+    return self._scale(s) * x
+
+  def call_inference(self, loga, x):
+    s = K.sigmoid(loga)
+    return self._scale(s) * x
+
+  def _scale(self, s):
+    return K.minimum(1., K.maximum(0., s * (self.delta - self.gamma) + self.gamma))
+
+  def compute_output_shape(self, input_shape):
+    return input_shape
+
 
 class Renorm(Layer):
 
@@ -104,13 +141,12 @@ class Multiply(Layer):
 
 class SparseMultiply(Layer):
 
-  def __init__(self, beta=2./3., gamma=-0.1, delta=1.1, l0_regularization=0.1/850, **kwargs):
+  def __init__(self, beta=2./3., gamma=-0.1, delta=1.1, **kwargs):
     super(SparseMultiply, self).__init__(**kwargs)
 
     self.beta = beta
     self.gamma = gamma
     self.delta = delta
-    self.l0_regularization = l0_regularization
 
   def call(self, inputs):
     x = inputs[0]
@@ -119,7 +155,7 @@ class SparseMultiply(Layer):
     return K.in_train_phase(self.call_training(loga, x), self.call_inference(loga, x))
 
   def call_training(self, loga, x):
-    u = K.random_uniform((850,))
+    u = K.random_uniform(K.shape(loga))
     s = K.sigmoid((K.log(u) - K.log(1 - u) + loga) / self.beta)
     return self._scale(s) * x
 

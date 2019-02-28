@@ -8,17 +8,20 @@ import tensorflow as tf
 
 from keras.models import Model
 from keras.layers import Input
-from learning_to_adapt.model import FeatureTransform, LHUC, Renorm, Multiply, SDBatchNormalization, UttBatchNormalization
+from learning_to_adapt.model import L0, FeatureTransform, LHUC, SparseLHUC, Renorm, Multiply, SparseMultiply, SDBatchNormalization, UttBatchNormalization
 
 
 def load_model(path):
     return keras.models.load_model(path, custom_objects={
         'FeatureTransform': FeatureTransform,
         'LHUC': LHUC,
+        'SparseLHUC': SparseLHUC,
         'Renorm': Renorm,
         'Multiply': Multiply,
+        'SparseMultiply': SparseMultiply,
         'SDBatchNormalization': SDBatchNormalization,
         'UttBatchNormalization': UttBatchNormalization,
+        'L0': L0,
     })
 
 
@@ -37,12 +40,19 @@ if __name__ == '__main__':
 
     x = y = Input(shape=(None, 40))
     for l in m_in.layers:
-        if l.name.startswith('input') or l.name.startswith('multiply'):
+        if l.name.startswith('input') or l.name.startswith('multiply') or l.name.startswith('sparse_multiply'):
             continue
 
         if l.name.startswith('lhuc'):
             y = LHUC(name=l.name, weights=[l.get_weights()[0][0]])(y)
-        elif l.name.endswith('batchnorm'):
+        elif l.name.startswith('sparse_lhuc'):
+            regularizer = l.activity_regularizer
+            beta = regularizer.beta
+            gamma = regularizer.gamma
+            delta = regularizer.delta
+
+            y = SparseLHUC(beta, gamma, delta, regularizer, name=l.name, weights=[l.get_weights()[0][0]])(y)
+        elif l.name.endswith('batchnorm') and isinstance(l, SDBatchNormalization):
             weights = l.get_weights()
             gamma = weights[0][0]
             beta = weights[1][0]
