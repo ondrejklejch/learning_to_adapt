@@ -67,6 +67,23 @@ def adapt_meta(model, config, x, y):
     set_model_weights(model, new_params[0])
 
 
+def set_test_mode_for_batchnorm(m):
+    x = y = keras.layers.Input(shape=(None, 40))
+    for l in m.layers:
+        if l.name.startswith('input'):
+            continue
+
+        if l.name.endswith('batchnorm') and isinstance(l, keras.layers.BatchNormalization):
+            y = l(y, training=False)
+        else:
+            y = l(y)
+
+    m = keras.models.Model(inputs=x, outputs=y)
+    m.compile(loss='sparse_categorical_crossentropy', optimizer='sgd')
+
+    return m
+
+
 def load_config(config):
     with open(config, 'r') as f:
         return json.load(f)
@@ -88,6 +105,7 @@ if __name__ == '__main__':
 
     ## Load model
     m = load_model(model)
+    m = set_test_mode_for_batchnorm(m)
 
     with open(counts, 'r') as f:
         counts = np.fromstring(f.read().strip(" []"), dtype='float32', sep=' ')
