@@ -1,7 +1,7 @@
 from keras import backend as K
 from keras.activations import get as get_activation
 from keras.engine.topology import Layer
-from keras.layers import Input, Activation, Dense, Conv1D
+from keras.layers import Input, Activation, Dense, Conv1D, BatchNormalization
 from keras.models import Model
 from layers import FeatureTransform, LHUC, Renorm, UttBatchNormalization
 import numpy as np
@@ -20,6 +20,7 @@ def create_model_wrapper(model, batch_size=1):
   for layer in model.layers:
     if isinstance(layer, Dense):
       layers.append({
+        "name": layer.name,
         "type": "dense",
         "units": layer.units,
         "use_bias": layer.use_bias,
@@ -30,6 +31,7 @@ def create_model_wrapper(model, batch_size=1):
       })
     elif isinstance(layer, Conv1D):
       layers.append({
+        "name": layer.name,
         "type": "conv1d",
         "filters": layer.filters,
         "kernel_size": layer.kernel_size,
@@ -44,6 +46,7 @@ def create_model_wrapper(model, batch_size=1):
       })
     elif isinstance(layer, FeatureTransform):
       layers.append({
+        "name": layer.name,
         "type": "feature_transform",
         "feat_dim": feat_dim,
         "trainable": layer.trainable,
@@ -52,6 +55,7 @@ def create_model_wrapper(model, batch_size=1):
       })
     elif isinstance(layer, LHUC):
       layers.append({
+        "name": layer.name,
         "type": "lhuc",
         "trainable": layer.trainable,
         "num_params": count_params(layer),
@@ -59,6 +63,7 @@ def create_model_wrapper(model, batch_size=1):
       })
     elif isinstance(layer, Renorm):
       layers.append({
+        "name": layer.name,
         "type": "renorm",
         "trainable": layer.trainable,
         "num_params": count_params(layer),
@@ -66,14 +71,26 @@ def create_model_wrapper(model, batch_size=1):
       })
     elif isinstance(layer, UttBatchNormalization):
       layers.append({
+        "name": layer.name,
         "type": "batchnorm",
         "trainable": layer.trainable,
         "num_params": count_params(layer),
         "weights_shapes": [w.shape for w in layer.get_weights()],
         "epsilon": layer.epsilon,
       })
+    elif isinstance(layer, BatchNormalization):
+      layers.append({
+        "name": layer.name,
+        "type": "standard-batchnorm",
+        "trainable": layer.trainable,
+        "num_params": count_params(layer),
+        "weights_shapes": [w.shape for w in layer.get_weights()],
+        "momentum": layer.momentum,
+        "epsilon": layer.epsilon,
+      })
     elif isinstance(layer, Activation):
       layers.append({
+        "name": layer.name,
         "type": "activation",
         "activation": layer.activation.__name__,
         "trainable": layer.trainable,
@@ -205,6 +222,26 @@ class ModelWrapper(Layer):
     self.layers = layers
     self.batch_size = batch_size
 
+  def build(self, input_shape):
+    self.moving_means = {}
+    self.moving_vars = {}
+
+    for layer in self.layers:
+      if layer["type"] == "standard-batchnorm":
+        self.moving_means[layer["name"]] = self.add_weight(
+          shape=layer["weights_shapes"][2],
+          name='moving_mean_%s' % layer["name"],
+          initializer='zeros',
+          trainable=False,
+        )
+
+        self.moving_vars[layer["name"]] = self.add_weight(
+          shape=layer["weights_shapes"][3],
+          name='moving_vars_%s' % layer["name"],
+          initializer='ones',
+          trainable=False,
+        )
+
   def count_trainable_params(self, layers):
     return sum([l["num_params"] * l["trainable"] for l in layers])
 
@@ -230,7 +267,7 @@ class ModelWrapper(Layer):
 
     return K.constant(np.concatenate(coordinates))
 
-  def call(self, inputs):
+  def call(self, inputs, training=None):
     if len(inputs) == 3:
         params, trainable_params, x = inputs
         params = self.merge_params(params, trainable_params)
@@ -239,20 +276,21 @@ class ModelWrapper(Layer):
     else:
         raise ValueError("Wrong number of inputs")
 
-    return K.stack([self.evaluate_model([params[i], x[i]]) for i in range(self.batch_size)], 0)
+    self.inputs = inputs
+    return K.stack([self.evaluate_model([params[i], x[i]], training=training) for i in range(self.batch_size)], 0)
 
-  def evaluate_model(self, inputs):
+  def evaluate_model(self, inputs, training=None):
     params, x = inputs
 
     offset = 0
     for layer in self.layers:
       weights = params[offset:offset + layer["num_params"]]
       offset += layer["num_params"]
-      x = self.evaluate_layer(layer, weights, x)
+      x= self.evaluate_layer(layer, weights, x, training)
 
     return x
 
-  def evaluate_layer(self, layer, weights, x):
+  def evaluate_layer(self, layer, weights, x, training=None):
     old_weights = weights
     weights = reshape_params(layer["weights_shapes"], weights)
 
@@ -286,6 +324,19 @@ class ModelWrapper(Layer):
       x = K.l2_normalize(x, axis=-1) * K.sqrt(dim)
     elif layer["type"] == "batchnorm":
       x = K.normalize_batch_in_training(x, weights[0], weights[1], [0, 1], epsilon=layer["epsilon"])[0]
+    elif layer["type"] == "standard-batchnorm":
+      moving_mean = self.moving_means[layer["name"]]
+      moving_var = self.moving_vars[layer["name"]]
+
+      if training is True:
+        x, mean, variance = K.normalize_batch_in_training(x, weights[0], weights[1], [0, 1], epsilon=layer["epsilon"])
+
+        self.add_update([
+          K.moving_average_update(moving_mean, mean, layer["momentum"]),
+          K.moving_average_update(moving_var, variance, layer["momentum"]),
+        ], self.inputs)
+      else:
+        x = K.batch_normalization(x, moving_mean, moving_var, weights[0], weights[1], [0, 1], epsilon=layer["epsilon"])
     elif layer["type"] == "activation":
       x = get_activation(layer["activation"])(x)
 
