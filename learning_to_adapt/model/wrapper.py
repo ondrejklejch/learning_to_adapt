@@ -1,3 +1,4 @@
+from collections import defaultdict
 from keras import backend as K
 from keras.activations import get as get_activation
 from keras.engine.topology import Layer
@@ -276,8 +277,28 @@ class ModelWrapper(Layer):
     else:
         raise ValueError("Wrong number of inputs")
 
-    self.inputs = inputs
-    return K.stack([self.evaluate_model([params[i], x[i]], training=training) for i in range(self.batch_size)], 0)
+    self.mean_stats = defaultdict(list)
+    self.variance_stats = defaultdict(list)
+
+    outputs = K.stack([self.evaluate_model([params[i], x[i]], training=training) for i in range(self.batch_size)], 0)
+
+    if training is True:
+        for layer in self.layers:
+            if layer["type"] != "standard-batchnorm":
+                continue
+
+            moving_mean = self.moving_means[layer["name"]]
+            moving_var = self.moving_vars[layer["name"]]
+
+            mean = K.mean(K.stack(self.mean_stats[layer["name"]], 0), 0)
+            variance = K.mean(K.stack(self.variance_stats[layer["name"]], 0), 0)
+
+            self.add_update([
+              K.moving_average_update(moving_mean, mean, layer["momentum"]),
+              K.moving_average_update(moving_var, variance, layer["momentum"]),
+            ], inputs)
+
+    return outputs
 
   def evaluate_model(self, inputs, training=None):
     params, x = inputs
@@ -325,18 +346,21 @@ class ModelWrapper(Layer):
     elif layer["type"] == "batchnorm":
       x = K.normalize_batch_in_training(x, weights[0], weights[1], [0, 1], epsilon=layer["epsilon"])[0]
     elif layer["type"] == "standard-batchnorm":
-      moving_mean = self.moving_means[layer["name"]]
-      moving_var = self.moving_vars[layer["name"]]
+      def normalize_training():
+        normalized_x, mean, variance = K.normalize_batch_in_training(x, weights[0], weights[1], [0, 1], epsilon=layer["epsilon"])
 
-      if training is True:
-        x, mean, variance = K.normalize_batch_in_training(x, weights[0], weights[1], [0, 1], epsilon=layer["epsilon"])
+        self.mean_stats[layer["name"]].append(mean)
+        self.variance_stats[layer["name"]].append(variance)
 
-        self.add_update([
-          K.moving_average_update(moving_mean, mean, layer["momentum"]),
-          K.moving_average_update(moving_var, variance, layer["momentum"]),
-        ], self.inputs)
-      else:
-        x = K.batch_normalization(x, moving_mean, moving_var, weights[0], weights[1], [0, 1], epsilon=layer["epsilon"])
+        return normalized_x
+
+      def normalize_inference():
+        moving_mean = self.moving_means[layer["name"]]
+        moving_var = self.moving_vars[layer["name"]]
+
+        return K.batch_normalization(x, moving_mean, moving_var, weights[1], weights[0], epsilon=layer["epsilon"])
+
+      x = K.in_train_phase(normalize_training, normalize_inference, training=training)
     elif layer["type"] == "activation":
       x = get_activation(layer["activation"])(x)
 
