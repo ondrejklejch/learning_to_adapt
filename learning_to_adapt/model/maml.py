@@ -44,8 +44,8 @@ def create_maml(wrapper, weights, num_steps=3, use_second_order_derivatives=Fals
   maml = MAML(wrapper, num_steps, use_second_order_derivatives, use_lr_per_step, use_kld_regularization, train_params=True, weights=maml_weights)
   original_params, adapted_params = tuple(maml([lda(training_feats), training_labels]))
 
-  original_predictions = Activation('linear', name='original')(wrapper([original_params, lda(testing_feats)]))
-  adapted_predictions = Activation('linear', name='adapted')(wrapper([adapted_params, lda(testing_feats)]))
+  original_predictions = Activation('linear', name='original')(wrapper([original_params, lda(testing_feats)], training=True))
+  adapted_predictions = Activation('linear', name='adapted')(wrapper([adapted_params, lda(testing_feats)], training=False))
 
   return Model(
     inputs=[training_feats, training_labels, testing_feats],
@@ -122,7 +122,7 @@ class MAML(Layer):
     trainable_params = self.wrapper.get_trainable_params(self.repeated_params)
 
     if self.use_kld_regularization:
-      self.original_predictions = self.wrapper([self.repeated_params, feats[:,0]])
+      self.original_predictions = self.wrapper([self.repeated_params, feats[:,0]], training=False)
 
     for i in range(self.num_steps):
       trainable_params = self.step(feats[:,i], labels[:,i], trainable_params, step=i)
@@ -146,7 +146,7 @@ class MAML(Layer):
     return K.concatenate(new_params, axis=1)
 
   def compute_gradients(self, trainable_params, feats, labels):
-    predictions = self.wrapper([self.repeated_params, trainable_params, feats])
+    predictions = self.wrapper([self.repeated_params, trainable_params, feats], training=False)
     kld_gradients = self.compute_kld_gradients(trainable_params, predictions)
 
     if self.use_second_order_derivatives:
