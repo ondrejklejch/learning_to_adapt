@@ -105,7 +105,8 @@ def create_model_wrapper(model, batch_size=1):
     num_params,
     loss,
     layers,
-    batch_size)
+    batch_size,
+    weights=get_model_stats(model))
 
 def create_model(wrapper, lda=None):
   if lda:
@@ -193,6 +194,14 @@ def get_model_weights(model):
       weights.extend(w.flatten())
 
   return np.array(weights)
+
+def get_model_stats(model):
+  stats = []
+  for l in model.layers:
+    if isinstance(l, BatchNormalization):
+      stats.extend(l.get_weights()[2:])
+
+  return stats
 
 def set_model_weights(model, weights):
   for l in model.layers:
