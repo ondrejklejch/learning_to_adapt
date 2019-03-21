@@ -29,7 +29,7 @@ def create_meta_learner(wrapper, units=20, meta_learner_type='full', num_steps=3
     raise ValueError('Undefined meta learner type: %s' % meta_learner_type)
 
   new_params = meta_learner([training_feats, training_labels, params])
-  predictions = wrapper([new_params, testing_feats])
+  predictions = wrapper([new_params, testing_feats], training=False)
 
   return Model(
     inputs=[params, training_feats, training_labels, testing_feats],
@@ -295,8 +295,8 @@ class LearningRatePerLayerMetaLearner(Layer):
     return input_shape[2]
 
   def compute_gradients(self, trainable_params, feats, labels):
-    predictions = self.wrapper([self.params, trainable_params, feats])
-    loss = K.sum(losses.get(self.wrapper.loss)(labels, predictions)) / 1000.
+    predictions = self.wrapper([self.params, trainable_params, feats], training=False)
+    loss = K.sum(losses.get(self.wrapper.loss)(labels, predictions), axis=[1,2]) / 1000.
     return K.stop_gradient(K.squeeze(K.gradients(loss, [trainable_params]), 0))
 
   def get_config(self):

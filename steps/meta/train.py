@@ -5,32 +5,16 @@ from keras.callbacks import ModelCheckpoint, CSVLogger
 from keras.models import load_model
 from keras.optimizers import Adam
 
-from learning_to_adapt.model import create_meta_learner, create_model_wrapper, get_model_weights, FeatureTransform, LHUC, Renorm
+from learning_to_adapt.model import create_meta_learner, create_model_wrapper, get_model_weights, load_model
 from learning_to_adapt.utils import load_dataset_for_maml, load_params_generator, load_utt_to_pdfs
 
 import keras
 import tensorflow as tf
 
 config = tf.ConfigProto()
-config.intra_op_parallelism_threads=1
-config.inter_op_parallelism_threads=1
+config.intra_op_parallelism_threads=8
+config.inter_op_parallelism_threads=8
 keras.backend.tensorflow_backend.set_session(tf.Session(config=config))
-
-
-def load_acoustic_model(path, adaptation_type="ALL"):
-    custom_objects = {
-        'FeatureTransform': FeatureTransform,
-        'LHUC': LHUC,
-        'Renorm': Renorm,
-    }
-
-    model = load_model(model_path, custom_objects=custom_objects)
-
-    if adaptation_type == "LHUC":
-        for l in model.layers:
-            l.trainable = l.name.startswith("lhuc")
-
-    return model
 
 
 def reshape_eval_data(adapt_x, adapt_y, test_x, test_y):
@@ -53,10 +37,9 @@ if __name__ == '__main__':
     right_context = int(sys.argv[10])
 
     num_epochs = 20
-    batch_size = 8
-    num_epochs = 10
+    batch_size = 4
 
-    model = load_acoustic_model(model_path, adaptation_type)
+    model = load_model(model_path, adaptation_type)
     model.compile(
         loss='sparse_categorical_crossentropy',
         optimizer='adam',
@@ -116,7 +99,7 @@ if __name__ == '__main__':
     ]
 
     meta.fit([params, adapt_x, adapt_y, test_x], test_y,
-        steps_per_epoch=32,
+        steps_per_epoch=256,
         epochs=num_epochs,
         validation_data=([val_params, val_adapt_x, val_adapt_y, val_test_x], val_test_y),
         validation_steps=32,
