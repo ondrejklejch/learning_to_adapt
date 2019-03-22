@@ -126,7 +126,8 @@ def create_model(wrapper, lda=None):
         units=l["units"],
         use_bias=l["use_bias"],
         activation=l["activation"],
-        trainable=l["trainable"]
+        trainable=l["trainable"],
+        name=l.get("name", None)
       )(y)
     elif l["type"] == "conv1d":
       y = Conv1D(
@@ -137,18 +138,21 @@ def create_model(wrapper, lda=None):
         dilation_rate=l["dilation_rate"],
         activation=l["activation"],
         use_bias=l["use_bias"],
-        trainable=l["trainable"]
+        trainable=l["trainable"],
+        name=l.get("name", None)
       )(y)
     elif l["type"] == "feature_transform":
-      y = FeatureTransform(trainable=l["trainable"])(y)
+      y = FeatureTransform(trainable=l["trainable"], name=l.get("name", None))(y)
     elif l["type"] == "lhuc":
-      y = LHUC(trainable=l["trainable"])(y)
+      y = LHUC(trainable=l["trainable"], name=l.get("name", None))(y)
     elif l["type"] == "renorm":
-      y = Renorm()(y)
+      y = Renorm(name=l.get("name", None))(y)
     elif l["type"] == "batchnorm":
-      y = UttBatchNormalization(epsilon=l["epsilon"], trainable=l["trainable"])(y)
+      y = UttBatchNormalization(epsilon=l["epsilon"], trainable=l["trainable"], name=l.get("name", None))(y)
+    elif l["type"] == "standard-batchnorm":
+      y = BatchNormalization(epsilon=l["epsilon"], trainable=l["trainable"], name=l.get("name", None))(y)
     elif l["type"] == "activation":
-      y = Activation(l["activation"])(y)
+      y = Activation(l["activation"], name=l.get("name", None))(y)
     else:
       raise ValueError("Not implemented: %s" % l["type"])
 
@@ -203,13 +207,17 @@ def get_model_stats(model):
 
   return stats
 
-def set_model_weights(model, weights):
+def set_model_weights(model, weights, wrapper=None):
   for l in model.layers:
     layer_weights = []
     for w in l.weights:
       num_weights = np.prod(w.shape)
       layer_weights.append(weights[:num_weights].reshape(w.shape))
       weights = weights[num_weights:]
+
+    if isinstance(l, BatchNormalization) and wrapper is not None:
+      layer_weights[2] = K.get_session().run(wrapper.moving_means[l.name])
+      layer_weights[3] = K.get_session().run(wrapper.moving_vars[l.name])
 
     l.set_weights(layer_weights)
 
@@ -296,6 +304,9 @@ class ModelWrapper(Layer):
             if layer["type"] != "standard-batchnorm":
                 continue
 
+            if len(self.mean_stats[layer["name"]]) == 0:
+                continue
+
             moving_mean = self.moving_means[layer["name"]]
             moving_var = self.moving_vars[layer["name"]]
 
@@ -369,7 +380,10 @@ class ModelWrapper(Layer):
 
         return K.batch_normalization(x, moving_mean, moving_var, weights[1], weights[0], epsilon=layer["epsilon"])
 
-      x = K.in_train_phase(normalize_training, normalize_inference, training=training)
+      if training is True:
+        x = K.in_train_phase(normalize_training, normalize_inference)
+      else:
+        x = normalize_inference()
     elif layer["type"] == "activation":
       x = get_activation(layer["activation"])(x)
 

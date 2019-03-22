@@ -67,7 +67,7 @@ def create_adapter(wrapper, num_steps, use_lr_per_step, use_kld_regularization, 
 
 class MAML(Layer):
 
-  def __init__(self, wrapper, num_steps=3, use_second_order_derivatives=False, use_lr_per_step=False, use_kld_regularization=False, train_params=True, **kwargs):
+  def __init__(self, wrapper, num_steps=3, use_second_order_derivatives=False, use_lr_per_step=False, use_kld_regularization=False, train_params=True, correctly_serialized=True, **kwargs):
     super(MAML, self).__init__(**kwargs)
 
     self.wrapper = wrapper
@@ -76,6 +76,7 @@ class MAML(Layer):
     self.use_lr_per_step = use_lr_per_step
     self.use_kld_regularization = use_kld_regularization
     self.train_params = train_params
+    self.correctly_serialized = correctly_serialized
 
     self.param_groups = list(wrapper.param_groups())
     self.num_param_groups = len(self.param_groups)
@@ -180,6 +181,7 @@ class MAML(Layer):
       'use_lr_per_step': self.use_lr_per_step,
       'use_kld_regularization': self.use_kld_regularization,
       'train_params': self.train_params,
+      'correctly_serialized': self.correctly_serialized,
     }
 
   @classmethod
@@ -189,5 +191,20 @@ class MAML(Layer):
     use_lr_per_step = config.get('use_lr_per_step', False)
     use_kld_regularization = config.get('use_kld_regularization', False)
     train_params = config.get('train_params', True)
+    correctly_serialized = config.get('correctly_serialized', False)
 
-    return cls(wrapper, config.get('num_steps', 3), use_second_order_derivatives, use_lr_per_step, use_kld_regularization, train_params)
+    return cls(wrapper, config.get('num_steps', 3), use_second_order_derivatives, use_lr_per_step, use_kld_regularization, train_params, correctly_serialized=correctly_serialized)
+
+  @property
+  def trainable_weights(self):
+    if self.correctly_serialized:
+      return self._trainable_weights + self.wrapper.trainable_weights
+    else:
+      return self._trainable_weights
+
+  @property
+  def non_trainable_weights(self):
+    if self.correctly_serialized:
+      return self._non_trainable_weights + self.wrapper.non_trainable_weights
+    else:
+      return self._non_trainable_weights

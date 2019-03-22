@@ -13,20 +13,19 @@ from learning_to_adapt.model import load_model, create_maml, create_model, creat
 
 def converted_models_produce_correct_output(m_in, m_out):
     # Test that converted models
-    adapt_x = np.random.normal(size=(1, 3, 20, 78, 40))
-    adapt_y = np.ones((1, 3, 20, 50, 1))
-    test_x = np.random.normal(size=(1, 20, 78, 40))
+    adapt_x = np.random.normal(size=(4, 3, 20, 78, 40))
+    adapt_y = np.ones((4, 3, 20, 50, 1))
+    test_x = np.random.normal(size=(4, 20, 78, 40))
 
     # Workaround for MAML models with wrong input dimensions
-    maml = m_in.get_layer('maml_1')
-    maml.wrapper.batch_size = 1
-    m_in = create_maml(maml.wrapper, weights[2], maml.num_steps, maml.use_second_order_derivatives, maml.use_lr_per_step, maml.use_kld_regularization)
-    m_in.load_weights(weights_in)
+    # maml = m_in.get_layer('maml_1')
+    # maml.wrapper.batch_size = 4
+    # m_in = create_maml(maml.wrapper, maml.get_weights()[0], maml.num_steps, maml.use_second_order_derivatives, maml.use_lr_per_step, maml.use_kld_regularization)
+    # m_in.load_weights(weights_in)
 
-    reference_predictions = m_in.predict([adapt_x, adapt_y, test_x])[1]
+    reference_predictions = m_in.predict([adapt_x, adapt_y, test_x])[1][0]
     test_predictions = m_out.predict(test_x[0])
-
-    return np.allclose(reference_predictions[0][0,:5,:5], test_predictions[0,:5,:5])
+    return np.allclose(reference_predictions, test_predictions)
 
 if __name__ == '__main__':
     model_in = sys.argv[1]
@@ -41,16 +40,21 @@ if __name__ == '__main__':
     m_in.load_weights(weights_in)
     weights = m_in.get_weights()
 
+    # Bugfix for wrongly saved model-wrapper
+    m_in.get_layer('maml_1').wrapper.set_weights(m_in.get_layer('model_wrapper_2').get_weights())
+
     try:
       lda = m_in.get_layer('lda_1')
-      model_weights = np.concatenate([weights[0].flatten(), weights[1].flatten(), weights[2].flatten()])
+      lda_weights = [x.flatten() for x in lda.get_weights()]
     except ValueError:
-      lda = None
+      lda_weights = []
       model_weights = weights[0][0]
 
     maml = m_in.get_layer('maml_1')
     m_out = create_model(maml.wrapper, m_in.get_layer('lda_1'))
-    set_model_weights(m_out, model_weights)
+
+    model_weights = np.concatenate(lda_weights + [maml.get_weights()[0].flatten()])
+    set_model_weights(m_out, model_weights, maml.wrapper)
 
     assert converted_models_produce_correct_output(m_in, m_out)
 
@@ -62,4 +66,4 @@ if __name__ == '__main__':
     adapter.save(meta_out)
     adapter.summary()
 
-    print maml.get_weights()[1:]
+    print maml.get_weights()[1]

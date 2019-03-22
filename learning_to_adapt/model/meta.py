@@ -237,6 +237,14 @@ class MetaLearner(Layer):
 
     return cls(wrapper, units)
 
+  @property
+  def trainable_weights(self):
+    return self._trainable_weights + self.wrapper.trainable_weights
+
+  @property
+  def non_trainable_weights(self):
+    return self._non_trainable_weights + self.wrapper.non_trainable_weights
+
 
 class LearningRatePerLayerMetaLearner(Layer):
 
@@ -316,3 +324,11 @@ class LearningRatePerLayerMetaLearner(Layer):
     use_lr_per_step = config.get('use_lr_per_step', False)
 
     return cls(wrapper, num_steps, use_lr_per_step)
+
+  @property
+  def trainable_weights(self):
+    return self._trainable_weights + self.wrapper.trainable_weights
+
+  @property
+  def non_trainable_weights(self):
+    return self._non_trainable_weights + self.wrapper.non_trainable_weights
