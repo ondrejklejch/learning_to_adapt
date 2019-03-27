@@ -197,6 +197,9 @@ class MAML(Layer):
 
   @property
   def trainable_weights(self):
+    if not self.wrapper.built:
+      self.wrapper.build(None)
+
     if self.correctly_serialized:
       return self._trainable_weights + self.wrapper.trainable_weights
     else:
@@ -204,6 +207,9 @@ class MAML(Layer):
 
   @property
   def non_trainable_weights(self):
+    if not self.wrapper.built:
+      self.wrapper.build(None)
+
     if self.correctly_serialized:
       return self._non_trainable_weights + self.wrapper.non_trainable_weights
     else:
