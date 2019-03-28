@@ -1,5 +1,6 @@
 from keras import backend as K
 from keras import losses
+from keras.constraints import NonNeg
 from keras.engine import InputSpec
 from keras.engine.topology import Layer
 from keras.initializers import Ones, Zeros, Constant
@@ -264,12 +265,14 @@ class LearningRatePerLayerMetaLearner(Layer):
         shape=(self.num_steps, self.num_param_groups, 1),
         name='learning_rate',
         initializer=Constant(0.001),
+        constraint=NonNeg(),
       )
     else:
       self.learning_rate = self.add_weight(
         shape=(self.num_param_groups, 1),
         name='learning_rate',
         initializer=Constant(0.001),
+        constraint=NonNeg(),
       )
 
   def call(self, inputs):

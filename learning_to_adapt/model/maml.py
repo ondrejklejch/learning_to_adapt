@@ -2,6 +2,7 @@ import numpy as np
 
 from keras import backend as K
 from keras import losses
+from keras.constraints import NonNeg
 from keras.engine import InputSpec
 from keras.engine.topology import Layer
 from keras.initializers import Ones, Zeros, Constant
@@ -41,7 +42,7 @@ def create_maml(wrapper, weights, num_steps=3, use_second_order_derivatives=Fals
   testing_feats = Input(shape=(None, None, feat_dim,))
 
   lda = LDA(feat_dim=feat_dim, kernel_size=5, weights=[lda, bias], trainable=False)
-  maml = MAML(wrapper, num_steps, use_second_order_derivatives, use_lr_per_step, use_kld_regularization, train_params=True, weights=maml_weights)
+  maml = MAML(wrapper, num_steps, use_second_order_derivatives, use_lr_per_step, use_kld_regularization, train_params=True, weights=maml_weights + wrapper.get_weights())
   original_params, adapted_params = tuple(maml([lda(training_feats), training_labels]))
 
   original_predictions = Activation('linear', name='original')(wrapper([original_params, lda(testing_feats)], training=True))
@@ -96,12 +97,15 @@ class MAML(Layer):
         shape=(self.num_steps, self.num_param_groups,),
         name='learning_rate',
         initializer='zeros',
+        constraint=NonNeg(),
       )
     else:
       self.learning_rate = self.add_weight(
         shape=(self.num_param_groups,),
         name='learning_rate',
         initializer='zeros',
+        constraint=NonNeg(),
+        trainable=self.num_steps > 0,
       )
 
     if self.use_kld_regularization:
@@ -109,7 +113,8 @@ class MAML(Layer):
         shape=(1,),
         name='kld',
         initializer='zeros',
-        trainable=self.use_kld_regularization
+        constraint=NonNeg(),
+        trainable=self.use_kld_regularization,
       )
 
   def call(self, inputs):

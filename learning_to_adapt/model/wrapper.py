@@ -99,14 +99,18 @@ def create_model_wrapper(model, batch_size=1):
         "weights_shapes": [w.shape for w in layer.get_weights()],
       })
 
-  return ModelWrapper(
+  wrapper = ModelWrapper(
     feat_dim,
     num_labels,
     num_params,
     loss,
     layers,
-    batch_size,
-    weights=get_model_stats(model))
+    batch_size)
+
+  wrapper.build(None)
+  wrapper.set_weights(get_model_stats(model))
+
+  return wrapper
 
 def create_model(wrapper, lda=None):
   if lda:
@@ -259,6 +263,8 @@ class ModelWrapper(Layer):
           initializer='ones',
           trainable=False,
         )
+
+    self.built = True
 
   def count_trainable_params(self, layers):
     return sum([l["num_params"] * l["trainable"] for l in layers])
