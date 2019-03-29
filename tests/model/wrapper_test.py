@@ -107,14 +107,36 @@ class TestWrapper(unittest.TestCase):
     batch_size = 4
     model, wrapped_model = self.build_batchnorm_model_wrapper(batchnorm_training, batch_size)
 
-    params = np.repeat(get_model_weights(model), 64).reshape((64, -1))
+    params = np.tile(get_model_weights(model), [64, 1])
     targets = np.random.normal(0, 1, size=(64, 4, 16, 2))
     inputs = targets * DATA_STD + DATA_MEAN
-    wrapped_model.fit([params, params, inputs], [targets], batch_size=batch_size, epochs=10, verbose=0)
+    wrapped_model.fit([params, inputs], [targets], batch_size=batch_size, epochs=10, verbose=0)
 
     mean, var = wrapped_model.get_weights()
     np.testing.assert_allclose(expected_mean, mean, atol=0.25)
     np.testing.assert_allclose(expected_var, var, atol=0.25)
+
+  def testWrappedModelUpdatesBatchNormStatsCorrectly(self):
+    K.set_learning_phase(1)
+
+    batch_size = 4
+    model, wrapped_model = self.build_batchnorm_model_wrapper(True, batch_size)
+
+    params = np.tile(get_model_weights(model), [batch_size, 1])
+    targets = np.random.normal(0, 1, size=(batch_size, 4, 1, 2))
+    inputs = targets * DATA_STD + DATA_MEAN
+
+    wrapper_predictions = wrapped_model.predict([params, inputs])
+    wrapped_model.train_on_batch([params, inputs], targets)
+    wrapper_mean, wrapper_var = wrapped_model.get_weights()
+
+    model_predictions = model.predict(inputs.reshape((-1, 1, 2))).reshape(inputs.shape)
+    model.train_on_batch(inputs.reshape((-1, 1, 2)), targets.reshape((-1, 1, 2)))
+    model_mean, model_var = model.get_weights()[2:]
+
+    np.testing.assert_allclose(wrapper_predictions, model_predictions)
+    np.testing.assert_allclose(wrapper_mean, model_mean, rtol=1e-5)
+    np.testing.assert_allclose(wrapper_var, model_var, rtol=1e-5)
 
   def build_wrapped_model(self, model, batch_size=1):
     wrapper = create_model_wrapper(model, batch_size=batch_size)
@@ -150,11 +172,10 @@ class TestWrapper(unittest.TestCase):
 
     wrapper = create_model_wrapper(model, batch_size=batch_size)
     params = Input(shape=(wrapper.num_params,))
-    trainable_params = Input(shape=(wrapper.num_trainable_params,))
     x = Input(shape=K.int_shape(model.inputs[0]))
-    y = wrapper([params, trainable_params, x], training=batchnorm_training)
+    y = wrapper([params, params, x], training=batchnorm_training)
 
-    wrapped_model = Model(inputs=[params, trainable_params, x], outputs=[y])
+    wrapped_model = Model(inputs=[params, x], outputs=[y])
     wrapped_model.compile(loss='mse', optimizer='SGD')
 
     return model, wrapped_model

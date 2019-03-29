@@ -300,31 +300,30 @@ class ModelWrapper(Layer):
     else:
         raise ValueError("Wrong number of inputs")
 
-    self.mean_stats = defaultdict(list)
-    self.variance_stats = defaultdict(list)
+    offset = 0
+    for layer in self.layers:
+      layer_params = params[:, offset:offset + layer["num_params"]]
+      offset += layer["num_params"]
 
-    outputs = K.stack([self.evaluate_model([params[i], x[i]], training=training) for i in range(self.batch_size)], 0)
+      if layer["type"] == "standard-batchnorm":
+        x = K.stack(x, 0)
+        self.mean, self.variance = tf.nn.moments(x, [0, 1, 2])
 
-    if training is True:
-        for layer in self.layers:
-            if layer["type"] != "standard-batchnorm":
-                continue
+        if training:
+          sample_size = K.prod([K.shape(x)[axis] for axis in [0, 1, 2]])
+          sample_size = K.cast(sample_size, dtype='float32')
+          unbiased_variance = self.variance * sample_size / (sample_size - (1.0 + layer["epsilon"]))
 
-            if len(self.mean_stats[layer["name"]]) == 0:
-                continue
+          self.add_update([
+            K.moving_average_update(self.moving_means[layer["name"]], self.mean, layer["momentum"]),
+            K.moving_average_update(self.moving_vars[layer["name"]], unbiased_variance, layer["momentum"]),
+          ], inputs)
 
-            moving_mean = self.moving_means[layer["name"]]
-            moving_var = self.moving_vars[layer["name"]]
+      x = [self.evaluate_layer(layer, layer_params[i], x[i], training) for i in range(self.batch_size)]
 
-            mean = K.mean(K.stack(self.mean_stats[layer["name"]], 0), 0)
-            variance = K.mean(K.stack(self.variance_stats[layer["name"]], 0), 0)
-
-            self.add_update([
-              K.moving_average_update(moving_mean, mean, layer["momentum"]),
-              K.moving_average_update(moving_var, variance, layer["momentum"]),
-            ], inputs)
-
-    return outputs
+    output = K.stack(x, 0)
+    output._uses_learning_phase = True
+    return output
 
   def evaluate_model(self, inputs, training=None):
     params, x = inputs
@@ -333,7 +332,7 @@ class ModelWrapper(Layer):
     for layer in self.layers:
       weights = params[offset:offset + layer["num_params"]]
       offset += layer["num_params"]
-      x= self.evaluate_layer(layer, weights, x, training)
+      x = self.evaluate_layer(layer, weights, x, training)
 
     return x
 
@@ -373,12 +372,7 @@ class ModelWrapper(Layer):
       x = K.normalize_batch_in_training(x, weights[0], weights[1], [0, 1], epsilon=layer["epsilon"])[0]
     elif layer["type"] == "standard-batchnorm":
       def normalize_training():
-        normalized_x, mean, variance = K.normalize_batch_in_training(x, weights[0], weights[1], [0, 1], epsilon=layer["epsilon"])
-
-        self.mean_stats[layer["name"]].append(mean)
-        self.variance_stats[layer["name"]].append(variance)
-
-        return normalized_x
+        return K.batch_normalization(x, self.mean, self.variance, weights[1], weights[0], epsilon=layer["epsilon"])
 
       def normalize_inference():
         moving_mean = self.moving_means[layer["name"]]
