@@ -82,7 +82,7 @@ def create_model_wrapper(model, batch_size=1):
     elif isinstance(layer, BatchNormalization):
       layers.append({
         "name": layer.name,
-        "type": "standard-batchnorm",
+        "type": "batch-renorm",
         "trainable": layer.trainable,
         "num_params": count_params(layer),
         "weights_shapes": [w.shape for w in layer.get_weights()],
@@ -153,7 +153,7 @@ def create_model(wrapper, lda=None):
       y = Renorm(name=l.get("name", None))(y)
     elif l["type"] == "batchnorm":
       y = UttBatchNormalization(epsilon=l["epsilon"], trainable=l["trainable"], name=l.get("name", None))(y)
-    elif l["type"] == "standard-batchnorm":
+    elif l["type"] == "standard-batchnorm" or l["type"] == "batch-renorm":
       y = BatchNormalization(epsilon=l["epsilon"], trainable=l["trainable"], name=l.get("name", None))(y)
     elif l["type"] == "activation":
       y = Activation(l["activation"], name=l.get("name", None))(y)
@@ -249,7 +249,7 @@ class ModelWrapper(Layer):
     self.moving_vars = {}
 
     for layer in self.layers:
-      if layer["type"] == "standard-batchnorm":
+      if layer["type"] in ["standard-batchnorm", "batch-renorm"]:
         self.moving_means[layer["name"]] = self.add_weight(
           shape=layer["weights_shapes"][2],
           name='moving_mean_%s' % layer["name"],
@@ -305,7 +305,7 @@ class ModelWrapper(Layer):
       layer_params = params[:, offset:offset + layer["num_params"]]
       offset += layer["num_params"]
 
-      if layer["type"] == "standard-batchnorm":
+      if layer["type"] in ["standard-batchnorm", "batch-renorm"]:
         x = K.stack(x, 0)
         self.mean, self.variance = tf.nn.moments(x, [0, 1, 2])
 
@@ -371,13 +371,43 @@ class ModelWrapper(Layer):
     elif layer["type"] == "batchnorm":
       x = K.normalize_batch_in_training(x, weights[0], weights[1], [0, 1], epsilon=layer["epsilon"])[0]
     elif layer["type"] == "standard-batchnorm":
+      moving_mean = self.moving_means[layer["name"]]
+      moving_var = self.moving_vars[layer["name"]]
+
       def normalize_training():
         return K.batch_normalization(x, self.mean, self.variance, weights[1], weights[0], epsilon=layer["epsilon"])
 
       def normalize_inference():
-        moving_mean = self.moving_means[layer["name"]]
-        moving_var = self.moving_vars[layer["name"]]
+        return K.batch_normalization(x, moving_mean, moving_var, weights[1], weights[0], epsilon=layer["epsilon"])
 
+      if training is True:
+        x = K.in_train_phase(normalize_training, normalize_inference)
+      else:
+        x = normalize_inference()
+    elif layer["type"] == "batch-renorm":
+      moving_mean = self.moving_means[layer["name"]]
+      moving_var = self.moving_vars[layer["name"]]
+
+      def normalize_training():
+        r_max = 3.
+        d_max = 5.
+
+        std = K.sqrt(self.variance + layer["epsilon"])
+        moving_std = K.sqrt(moving_var + layer["epsilon"])
+
+        r = K.stop_gradient(K.clip(std / moving_std, 1. / r_max, r_max))
+        d = K.stop_gradient(K.clip((self.mean - moving_mean) / moving_std, -d_max, d_max))
+
+        #r = tf.Print(r, [r, K.shape(r)], "r")
+        #d = tf.Print(d, [d, K.shape(d)], "d")
+
+
+        x_norm = (x - self.mean) / std * r + d
+        return weights[0] * x_norm + weights[1]
+        #inv = tf.rsqrt(self.variance + layer["epsilon"]) * weights[0] * r
+        #return x * inv - self.mean * inv + weights[0] * d + weights[1]
+
+      def normalize_inference():
         return K.batch_normalization(x, moving_mean, moving_var, weights[1], weights[0], epsilon=layer["epsilon"])
 
       if training is True:
