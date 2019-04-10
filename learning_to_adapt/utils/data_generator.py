@@ -7,7 +7,7 @@ import tensorflow as tf
 
 SILENCE_PDFS = set([0, 41, 43, 60, 118])
 
-def load_dataset(feats_dir, utt_to_spk, utt_to_pdfs, chunk_size, subsampling_factor=1, left_context=0, right_context=0):
+def load_dataset(feats_dir, utt_to_spk, utt_to_pdfs, chunk_size, subsampling_factor=1, left_context=0, right_context=0, speaker_independent_prob=0.5):
     if subsampling_factor != 1:
         raise ValueError('Data generator works only with subsampling_factor=1')
 
@@ -21,7 +21,7 @@ def load_dataset(feats_dir, utt_to_spk, utt_to_pdfs, chunk_size, subsampling_fac
             if utt not in utt_to_pdfs:
                 continue
 
-            spk = utt_to_spk[utt] if random.random() < 0.5 else 0
+            spk = utt_to_spk[utt]
             utt_pdfs = utt_to_pdfs[utt]
 
             utt_subsampled_length = utt_feats.shape[0] / subsampling_factor
@@ -36,7 +36,11 @@ def load_dataset(feats_dir, utt_to_spk, utt_to_pdfs, chunk_size, subsampling_fac
             spks.extend([spk for chunk in chunks])
             pdfs.extend([chunk[1] for chunk in chunks])
 
-        return np.array(feats, dtype=np.float32), np.array(spks, dtype=np.int32), np.array(pdfs, dtype=np.int32)
+        return (
+            np.array(feats, dtype=np.float32),
+            np.array(spks, dtype=np.int32) * (np.random.uniform(size=len(spks)) >= speaker_independent_prob),
+            np.array(pdfs, dtype=np.int32)
+        )
 
     def _reshape_fn(x, y, z):
         return (
@@ -187,12 +191,15 @@ def load_utt_to_pdfs(pdfs):
 
     return utt_to_pdfs
 
-def load_utt_to_spk(utt2spk):
+def load_utt_to_spk(utt2spk, spk_map_fc=None):
     spks = {'unk': 0}
     utt_to_spk = {}
     with open(utt2spk, 'r') as f:
         for line in f:
             (utt, spk) = line.split()
+
+            if spk_map_fc is not None:
+                spk = spk_map_fc(spk)
 
             if spk not in spks:
                 spks[spk] = len(spks)
