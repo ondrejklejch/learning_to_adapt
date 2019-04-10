@@ -30,11 +30,13 @@ if __name__ == '__main__':
     val_feats = sys.argv[3]
     adapt_pdfs = sys.argv[4]
     test_pdfs = sys.argv[5]
-    adaptation_type = sys.argv[6]
+    adaptation_type = sys.argv[6].upper()
     output_path = sys.argv[7]
     subsampling_factor = int(sys.argv[8])
     left_context = int(sys.argv[9])
     right_context = int(sys.argv[10])
+    num_frames = int(sys.argv[11])
+    meta_learner_mode = sys.argv[12]
 
     num_epochs = 20
     batch_size = 4
@@ -46,13 +48,14 @@ if __name__ == '__main__':
         metrics=['accuracy']
     )
 
-    wrapper = create_model_wrapper(model)
-    meta = create_meta_learner(wrapper, meta_learner_type='lr_per_layer')
+    wrapper = create_model_wrapper(model, batch_size=batch_size)
+    meta = create_meta_learner(wrapper, meta_learner_type='lr_per_layer', mode=meta_learner_mode)
     meta.compile(
         loss=model.loss,
         optimizer=Adam(),
         metrics=['accuracy']
     )
+    meta.summary()
 
     model_params = get_model_weights(model)
     utt_to_adapt_pdfs = load_utt_to_pdfs(adapt_pdfs)
@@ -65,6 +68,7 @@ if __name__ == '__main__':
         train_feats, utt_to_adapt_pdfs, utt_to_test_pdfs,
         left_context=left_context,
         right_context=right_context,
+        num_frames=num_frames,
         adaptation_steps=3
     )
     train_dataset = train_dataset.batch(batch_size, drop_remainder=True)
@@ -77,6 +81,7 @@ if __name__ == '__main__':
         val_feats, utt_to_adapt_pdfs, utt_to_test_pdfs,
         left_context=left_context,
         right_context=right_context,
+        num_frames=num_frames,
         adaptation_steps=3
     )
     val_dataset = val_dataset.batch(batch_size, drop_remainder=True)
@@ -91,6 +96,7 @@ if __name__ == '__main__':
 
     print "Starting training"
     print "Frame accuracy of the original model is: %.4f" % model.evaluate(eval_x, eval_y, steps=32)[1]
+    print "Frame accuracy of the adapted model is: %.4f" % meta.evaluate([val_params, val_adapt_x, val_adapt_y, val_test_x], val_test_y, steps=32)[1]
 
     callbacks = [
         CSVLogger(output_path + "meta.csv"),
@@ -106,5 +112,5 @@ if __name__ == '__main__':
         callbacks=callbacks
     )
 
-    print meta.get_weights()
+    print meta.get_weights()[0]
     print "Frame accuracy of the adapted model is: %.4f" % meta.evaluate([val_params, val_adapt_x, val_adapt_y, val_test_x], val_test_y, steps=32)[1]

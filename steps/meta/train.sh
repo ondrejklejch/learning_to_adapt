@@ -4,13 +4,14 @@
 . cmd.sh
 
 # TODO: Use locking script to obtain GPU
-export CUDA_VISIBLE_DEVICES=2
+export CUDA_VISIBLE_DEVICES=1
 export TF_CPP_MIN_LOG_LEVEL=2
 
 
-dset="dev2010-2012"
+dset="dev_iwslt"
 adaptation_type="sup"
-model_dir="exp/tdnn_am_850_renorm/"
+adapted_weights="all"
+model_dir="exp/tdnn_am_600_batchnorm/"
 
 # Obtain alignments for adaptation
 if [ $adaptation_type == "sup" ]; then
@@ -33,5 +34,12 @@ if [ ! -d $data/keras_meta_train_split ]; then
     python2.7 steps/split_feats_by_spk.py $data/feats.scp $data/keras_meta_train_split $data/keras_meta_val_split 5
 fi
 
-mkdir -p $model_dir/meta_$adaptation_type
-python2.7 steps/meta/train.py $model_dir/model.best.h5 $data/keras_meta_train_split $data/keras_meta_val_split "$adapt_pdfs" "$test_pdfs" ALL $model_dir/meta_$adaptation_type $frame_subsampling_factor $context_opts
+for mode in lr lr_per_step lr_per_layer lr_per_layer_per_step; do
+    for num_frames in 1000 3000 6000; do
+        echo "Training $adaptation_type $adapted_weights $mode with $num_frames for $model_dir"
+
+        meta_dir=$model_dir/meta_${adaptation_type}_${adapted_weights}_${mode}_${num_frames}
+        mkdir -p $meta_dir
+        python2.7 steps/meta/train.py $model_dir/model.best.h5 $data/keras_meta_train_split $data/keras_meta_val_split "$adapt_pdfs" "$test_pdfs" $adapted_weights $meta_dir $frame_subsampling_factor $context_opts $num_frames $mode
+    done
+done

@@ -13,7 +13,7 @@ from maml import MAML
 from wrapper import ModelWrapper, create_model_wrapper
 
 
-def create_meta_learner(wrapper, units=20, meta_learner_type='full', num_steps=3, use_lr_per_step=False):
+def create_meta_learner(wrapper, units=20, meta_learner_type='full', num_steps=3, mode='lr_per_layer'):
   feat_dim = wrapper.feat_dim
   num_params = wrapper.num_params
 
@@ -23,7 +23,7 @@ def create_meta_learner(wrapper, units=20, meta_learner_type='full', num_steps=3
   params = Input(shape=(num_params,))
 
   if meta_learner_type == 'lr_per_layer':
-    meta_learner = LearningRatePerLayerMetaLearner(wrapper, num_steps, use_lr_per_step)
+    meta_learner = LearningRatePerLayerMetaLearner(wrapper, num_steps, mode)
   elif meta_learner_type == 'full':
     meta_learner = MetaLearner(wrapper, units)
   else:
@@ -249,18 +249,39 @@ class MetaLearner(Layer):
 
 class LearningRatePerLayerMetaLearner(Layer):
 
-  def __init__(self, wrapper, num_steps=3, use_lr_per_step=False, **kwargs):
+  def __init__(self, wrapper, num_steps=3, mode="lr_per_step", **kwargs):
     super(LearningRatePerLayerMetaLearner, self).__init__(**kwargs)
 
     self.wrapper = wrapper
     self.num_steps = num_steps
-    self.use_lr_per_step = use_lr_per_step
+    self.mode = mode
     self.param_groups = list(wrapper.param_groups())
     self.num_param_groups = len(self.param_groups)
     self.num_trainable_params = self.wrapper.num_trainable_params
 
   def build(self, input_shapes):
-    if self.use_lr_per_step:
+    if self.mode == "lr":
+      self.learning_rate = self.add_weight(
+        shape=(1, 1),
+        name='learning_rate',
+        initializer=Constant(0.001),
+        constraint=NonNeg(),
+      )
+    elif self.mode == "lr_per_step":
+      self.learning_rate = self.add_weight(
+        shape=(self.num_steps, 1),
+        name='learning_rate',
+        initializer=Constant(0.001),
+        constraint=NonNeg(),
+      )
+    elif self.mode == "lr_per_layer":
+      self.learning_rate = self.add_weight(
+        shape=(self.num_param_groups, 1),
+        name='learning_rate',
+        initializer=Constant(0.001),
+        constraint=NonNeg(),
+      )
+    elif self.mode == "lr_per_layer_per_step":
       self.learning_rate = self.add_weight(
         shape=(self.num_steps, self.num_param_groups, 1),
         name='learning_rate',
@@ -268,12 +289,7 @@ class LearningRatePerLayerMetaLearner(Layer):
         constraint=NonNeg(),
       )
     else:
-      self.learning_rate = self.add_weight(
-        shape=(self.num_param_groups, 1),
-        name='learning_rate',
-        initializer=Constant(0.001),
-        constraint=NonNeg(),
-      )
+      raise ValueError("Unsupported mode: %s" % self.mode)
 
   def call(self, inputs):
     feats, labels, params = inputs
@@ -293,10 +309,14 @@ class LearningRatePerLayerMetaLearner(Layer):
     for param_group, indices in enumerate(self.param_groups):
       s, e = indices
 
-      if self.use_lr_per_step:
-        learning_rate = self.learning_rate[step, param_group]
-      else:
+      if self.mode == "lr":
+        learning_rate = self.learning_rate
+      elif self.mode == "lr_per_step":
+        learning_rate = self.learning_rate[step]
+      elif self.mode == "lr_per_layer":
         learning_rate = self.learning_rate[param_group]
+      elif self.mode == "lr_per_layer_per_step":
+        learning_rate = self.learning_rate[step, param_group]
 
       new_params.append(params[:, s:e] - learning_rate * gradients[:, s:e])
 
@@ -317,16 +337,16 @@ class LearningRatePerLayerMetaLearner(Layer):
         'config': self.wrapper.get_config()
       },
       'num_steps': self.num_steps,
-      'use_lr_per_step': self.use_lr_per_step
+      'mode': self.mode
     }
 
   @classmethod
   def from_config(cls, config, custom_objects=None):
     wrapper = deserialize(config.pop('wrapper'), custom_objects=custom_objects)
     num_steps = config.get('num_steps', 3)
-    use_lr_per_step = config.get('use_lr_per_step', False)
+    mode = config.get('mode', 'lr_per_layer')
 
-    return cls(wrapper, num_steps, use_lr_per_step)
+    return cls(wrapper, num_steps, mode)
 
   @property
   def trainable_weights(self):

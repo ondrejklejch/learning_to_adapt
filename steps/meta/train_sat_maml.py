@@ -3,11 +3,11 @@ import numpy as np
 
 from keras import backend as K
 from keras.callbacks import Callback, ModelCheckpoint, CSVLogger, LearningRateScheduler, TensorBoard
-from keras.layers import Input, Activation, Conv1D
+from keras.layers import Input, Activation, Conv1D, BatchNormalization
 from keras.models import load_model, Model
 from keras.optimizers import Adam
 
-from learning_to_adapt.model import create_maml, create_model_wrapper, get_model_weights, FeatureTransform, LHUC, Renorm, UttBatchNormalization
+from learning_to_adapt.model import create_maml, create_model_wrapper, get_model_weights, FeatureTransform, LHUC, Renorm
 from learning_to_adapt.utils import load_dataset_for_maml, load_utt_to_pdfs, load_lda
 
 import keras
@@ -25,7 +25,8 @@ def create_model(hidden_dim=350, adaptation_type='ALL'):
     for i, (kernel_size, dilation_rate) in enumerate(layers):
         name = "tdnn%d" % (i + 1)
         x = Conv1D(hidden_dim, kernel_size=kernel_size, dilation_rate=dilation_rate, activation="relu", name="%s.affine" % name, trainable=adaptation_type == 'ALL')(x)
-        x = UttBatchNormalization(name="lhuc.%s.batchnorm" % name, trainable=adaptation_type in ['ALL', 'LHUC'])(x)
+        x = BatchNormalization(name="%s.batchnorm" % name, trainable=adaptation_type in ['ALL', 'BATCHNORM'])(x)
+        x = LHUC(name="lhuc.%s" % name, trainable=adaptation_type in ['LHUC'])(x)
 
     y = Conv1D(4208, kernel_size=1, activation="softmax", name="output.affine", trainable=adaptation_type == 'ALL')(x)
 
@@ -58,13 +59,14 @@ if __name__ == '__main__':
 
     num_epochs = 400
     batch_size = 4
+    num_steps = 3
     use_second_order_derivatives = False
     use_lr_per_step = False
     use_kld_regularization = False
 
     loss_weight_scheduler = LossWeightScheduler(num_epochs=num_epochs)
 
-    model = create_model(850, adaptation_type)
+    model = create_model(600, adaptation_type)
     model.compile(
         loss='sparse_categorical_crossentropy',
         optimizer=Adam(),
@@ -73,11 +75,16 @@ if __name__ == '__main__':
     #model.summary()
 
     wrapper = create_model_wrapper(model, batch_size=batch_size)
-    meta = create_maml(wrapper, get_model_weights(model), use_second_order_derivatives=use_second_order_derivatives, use_lr_per_step=use_lr_per_step, use_kld_regularization=use_kld_regularization, lda_path='lda.txt')
+    meta = create_maml(wrapper, get_model_weights(model),
+        num_steps=num_steps,
+        use_second_order_derivatives=use_second_order_derivatives,
+        use_lr_per_step=use_lr_per_step,
+        use_kld_regularization=use_kld_regularization,
+        lda_path='lda.txt')
     meta.save(output_path + "meta.graph.h5")
     meta.compile(
         loss={'adapted': model.loss, 'original': model.loss},
-        optimizer=Adam(),
+        optimizer=Adam(clipvalue=1),
         metrics={'adapted': 'accuracy', 'original': 'accuracy'}
     )
     meta.summary()

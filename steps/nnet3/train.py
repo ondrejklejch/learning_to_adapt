@@ -3,7 +3,7 @@ import numpy as np
 
 from keras.callbacks import ModelCheckpoint, CSVLogger, LearningRateScheduler
 from keras.models import Model
-from keras.layers import Input, Activation, Conv1D
+from keras.layers import Input, Activation, Conv1D, BatchNormalization
 from keras.optimizers import Adam
 
 from learning_to_adapt.model import LHUC, Renorm
@@ -29,7 +29,7 @@ def create_model(hidden_dim=350, lda_path=None):
     for i, (kernel_size, dilation_rate) in enumerate(layers):
         name = "tdnn%d" % (i + 1)
         x = Conv1D(hidden_dim, kernel_size=kernel_size, dilation_rate=dilation_rate, activation="relu", name="%s.affine" % name)(x)
-        x = Renorm(name="%s.renorm" % name)(x)
+        x = BatchNormalization(name="%s.batchnorm" % name)(x)
         x = LHUC(name="lhuc.%s" % name, trainable=False)(x)
 
     y = Conv1D(4208, kernel_size=1, activation="softmax", name="output.affine")(x)
@@ -64,7 +64,7 @@ if __name__ == '__main__':
     val_dataset = val_dataset.take(512).cache().repeat()
     val_x, _, val_y = val_dataset.make_one_shot_iterator().get_next()
 
-    model = create_model(850, lda_path)
+    model = create_model(600, lda_path)
     model.compile(
         loss='sparse_categorical_crossentropy',
         metrics=['accuracy'],
